@@ -5,6 +5,7 @@ import { batchEmbed } from '../utils/embeddingFunction';
 import { loadImage, parseFrontierInfo } from '../utils/function';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
 import { sliceFrontierCells } from '../utils/sliceCells';
+import { getAverageColor, getClosestAttribute } from '../utils/colorCompareFunction';
 
 const THRESH = 0.8;
 
@@ -147,7 +148,7 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 4) 매칭 & 예측 이름 추출
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
-                const names = cells.map(cell => {
+                const names = await Promise.all(cells.map(async (cell) => {
                     let best = { score: -1, name: '' };
                     for (const { name, emb } of storedEmbs) {
                         let sum = 0;
@@ -155,8 +156,38 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
                         if (sum > best.score) best = { score: sum, name };
                     }
 
-                    return best?.score >= THRESH ? best.name.split('_')[0] : null;
-                });
+                    let finalName = null;
+                    if (best?.score >= THRESH) {
+                        let baseName = best.name.split('_')[0]; // 예: "우로스"
+
+                        // '우로스'인 경우에만 색상 분석 수행
+                        if (baseName.startsWith('우로스')) {
+                            const cellImg = await loadImage(cell.url);
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = cell.w;
+                            tempCanvas.height = cell.h;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCtx.drawImage(cellImg, 0, 0);
+
+                            // 색상 추출 영역
+                            const roi = { x: 1, y: 15, w: 3, h: 30 };
+
+                            const avgColor = getAverageColor(tempCanvas, roi);
+                            const attribute = getClosestAttribute(avgColor);
+
+                            if (attribute) {
+                                finalName = `${baseName}(${attribute})`; // 예) "우로스(우울)"
+                            } else {
+                                finalName = baseName; // 색상 매칭 실패 시 기본 이름 사용
+                            }
+                        } else {
+                            // 우로스가 아니면 기본 이름 사용
+                            finalName = baseName;
+                        }
+                    }
+                    return finalName;
+                    // return best?.score >= THRESH ? best.name.split('_')[0] : null;
+                }));
 
                 const shortNames = names.filter(n => n !== null);
                 console.log(`✅ [${idx + 1}] 예측(short):`, shortNames);

@@ -5,6 +5,7 @@ import { batchEmbed, onnxPreprocess } from '../utils/embeddingFunction';
 import { loadImage, parseClashInfo } from '../utils/function';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
 import { sliceClashCells } from '../utils/sliceCells';
+import { getAverageColor, getClosestAttribute } from '../utils/colorCompareFunction';
 
 const THRESH = 0.8;
 
@@ -44,8 +45,9 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
         const regions = [
             // { name: 'region1', x: 25, y: 2, w: 75, h: 30 }, // 100위전용 단계
             // { name: 'region2', x: 108, y: 86, w: 195, h: 72 }, // 100위전용 데이터종합
-            { name: 'region1', x: 14, y: 2, w: 81, h: 25 }, // 300위전용 단계
-            { name: 'region2', x: 185, y: 112, w: 55, h: 16 }, // 300위전용 플레이타임
+            // 2025-10-09일자로 y좌표 1씩 증가
+            { name: 'region1', x: 14, y: 3, w: 81, h: 25 }, // 300위전용 단계
+            { name: 'region2', x: 185, y: 113, w: 55, h: 16 }, // 300위전용 플레이타임
             // { name: 'region3', x: 143, y: 86, w: 155, h: 20 }, // 300위전용 점수
             // { name: 'region4', x: 189, y: 138, w: 124, h: 17 }, // 300위전용 시간보너스
         ];
@@ -157,7 +159,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 // 4) 매칭 & 예측 이름 추출
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
                 console.time(`match ${idx}`);
-                const names = cells.map(cell => {
+                const names = await Promise.all(cells.map(async cell => {
                     let best = { score: -1, name: '' };
                     for (const { name, emb } of storedEmbs) {
                         let sum = 0;
@@ -165,8 +167,37 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                         if (sum > best.score) best = { score: sum, name };
                     }
 
-                    return best?.score >= THRESH ? best.name.split('_')[0] : null;
-                });
+                    let finalName = null;
+                    if (best?.score >= THRESH) {
+                        let baseName = best.name.split('_')[0]; // 예: "우로스"
+
+                        // '우로스'인 경우에만 색상 분석 수행
+                        if (baseName.startsWith('우로스')) {
+                            const cellImg = await loadImage(cell.url);
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = cell.w;
+                            tempCanvas.height = cell.h;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCtx.drawImage(cellImg, 0, 0);
+
+                            // 색상 추출 영역
+                            const roi = { x: 1, y: 15, w: 3, h: 30 };
+
+                            const avgColor = getAverageColor(tempCanvas, roi);
+                            const attribute = getClosestAttribute(avgColor);
+
+                            if (attribute) {
+                                finalName = `${baseName}(${attribute})`; // 예) "우로스(우울)"
+                            } else {
+                                finalName = baseName; // 색상 매칭 실패 시 기본 이름 사용
+                            }
+                        } else {
+                            // 우로스가 아니면 기본 이름 사용
+                            finalName = baseName;
+                        }
+                    }
+                    return finalName;
+                }));
                 console.timeEnd(`match ${idx}`);
 
                 const shortNames = names.filter(n => n !== null);
@@ -204,10 +235,10 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
 
                 if (results.length > 0 && resultObject.rank !== null) {
                     // 바로 이전 결과와만 비교
-                    const prevResult = results[resultObject.rank - 1];
-                    if (prevResult.rank !== null && prevResult.score < resultObject.score && prevResult.rank < resultObject.rank) {
-                        const debugKey = prevResult.rank;
-                        const debugMessage = `${prevResult.rank}위 점수: ${prevResult.score} < ${resultObject.rank}위 점수: ${resultObject.score}`;
+                    const prevResult = results[resultObject?.rank - 1];
+                    if (prevResult?.rank !== null && prevResult?.score < resultObject?.score && prevResult?.rank < resultObject?.rank) {
+                        const debugKey = prevResult?.rank;
+                        const debugMessage = `${prevResult?.rank}위 점수: ${prevResult?.score} < ${resultObject?.rank}위 점수: ${resultObject?.score}`;
 
                         setResultDebug(prev => ({
                             ...prev,
