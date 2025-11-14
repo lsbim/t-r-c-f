@@ -2,6 +2,7 @@ import * as ort from 'onnxruntime-web';
 import { useEffect, useState } from "react";
 import ConvertJsonComponent from '../components/ConvertJsonComponent';
 import ProcessClashComponent from '../components/ProcessClashComponent';
+import ProcessClashV2Component from '../components/ProcessClashV2Component';
 import ProcessFrontierComponent from '../components/ProcessFrontierComponent';
 import HeaderNav from "../layouts/HeaderNav";
 
@@ -34,7 +35,7 @@ const IndexPage = () => {
         loadModel(); // 정의한 비동기 함수 즉시 호출
     }, []); // 빈 배열은 컴포넌트 마운트 시 한 번만 실행
 
-    
+
     const radioHandler = (e) => {
         setSelectType(e.target.value);
     }
@@ -47,12 +48,15 @@ const IndexPage = () => {
                 setDebugInfo={setDebugInfo}
                 debugInfo={debugInfo}
             />
-            <div className='flex justify-center items-center my-4 p-4 border-y-2 border-black'>
-                <label className='mr-4'>
+            <div className='flex justify-center items-center my-4 p-4 gap-x-4 border-y-2 border-black'>
+                <label>
                     대충돌 <input type='radio' value={"clash"} onChange={radioHandler} checked={selectType === 'clash'} />
                 </label>
                 <label>
                     프론티어 <input type='radio' value={"frontier"} onChange={radioHandler} checked={selectType === 'frontier'} />
+                </label>
+                <label>
+                    대충돌 2.0 <input type='radio' value={"clash_v2"} onChange={radioHandler} checked={selectType === 'clash_v2'} />
                 </label>
             </div>
             {selectType === 'clash' && (
@@ -64,6 +68,13 @@ const IndexPage = () => {
             )}
             {selectType === 'frontier' && (
                 <ProcessFrontierComponent
+                    session={session}
+                    setDebugInfo={setDebugInfo}
+                    debugInfo={debugInfo}
+                />
+            )}
+            {selectType === 'clash_v2' && (
+                <ProcessClashV2Component
                     session={session}
                     setDebugInfo={setDebugInfo}
                     debugInfo={debugInfo}

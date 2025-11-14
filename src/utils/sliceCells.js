@@ -83,7 +83,62 @@ export function sliceFrontierCells() {
       h: CELL_HEIGHT
     })),
     ...secondRow.map((pos, idx) => ({
-      index: idx + 6,        // 두 번째 행은 6번부터
+      index: idx + 7,        // 두 번째 행은 6번부터
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    }))
+  ];
+
+  return rects;
+}
+
+// 차원 대충돌 2.0
+export function sliceClashV2Cells() {
+  // 사진 크기는 왼쪽 위 시작점부터 55X45 크기로 자른다.
+  const CELL_WIDTH = 55;
+  const CELL_HEIGHT = 45;
+
+  // 1~9번 셀 (셰이디의 차원)
+  const firstRow = [
+    { x: 258, y: 95 },
+    { x: 326, y: 95 },
+    { x: 393, y: 95 },
+    { x: 461, y: 95 },
+    { x: 528, y: 95 },
+    { x: 597, y: 95 },
+    { x: 665, y: 95 },
+    { x: 733, y: 95 },
+    { x: 800, y: 95 },
+  ];
+
+  // 두 행의 Y축 차이는 71이다.
+
+  // 10~18번 셀 (림의 이면세계)
+  const secondRow = [
+    { x: 258, y: 223 },
+    { x: 326, y: 223 },
+    { x: 393, y: 223 },
+    { x: 461, y: 223 },
+    { x: 528, y: 223 },
+    { x: 597, y: 223 },
+    { x: 665, y: 223 },
+    { x: 733, y: 223 },
+    { x: 800, y: 223 },
+  ];
+
+  // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
+  const rects = [
+    ...firstRow.map((pos, idx) => ({
+      index: idx + 1,
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    })),
+    ...secondRow.map((pos, idx) => ({
+      index: idx + 10,
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
