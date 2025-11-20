@@ -156,7 +156,7 @@ export function parseFrontierInfo({ region1, region2, region3, region4 }) {
 export function parseClashV2Info({ region1, region2, region3, region4 }) {
     const result = {
         grade: null,
-        score: null,     // 점수
+        // score: null,     // 점수
         duration: null,     // 플레이시간
         sideGrade: null,     // 이면세계 단계
     };
@@ -168,12 +168,12 @@ export function parseClashV2Info({ region1, region2, region3, region4 }) {
             result.grade = parseInt(m[1], 10);
         }
     }
-    {
-        // region2 == 점수
-        const cleaned = region2.replace(/[,.]/g, ''); // .과 ,를 지우기
-        result.score = parseInt(cleaned, 10);
+    // {
+    //     // region2 == 점수
+    //     const cleaned = region2.replace(/[,.]/g, ''); // .과 ,를 지우기
+    //     result.score = parseInt(cleaned, 10);
 
-    }
+    // }
     {
         // region3 == 플레이시간 00:28 또는 0028 에서 mmss → 초
         // 1) “MM:SS” 또는 “M:SS” 형태 (초 자리가 1~2자리)

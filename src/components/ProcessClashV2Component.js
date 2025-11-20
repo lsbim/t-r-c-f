@@ -44,7 +44,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
     async function performOCR(imageUrl) {
         const regions = [
             { name: 'region1', x: 17, y: 3, w: 105, h: 27 }, // 2.0 전용 단계
-            { name: 'region2', x: 56, y: 214, w: 160, h: 19 }, // 2.0 전용 점수
+            // { name: 'region2', x: 56, y: 214, w: 160, h: 19 }, // 2.0 전용 점수
             { name: 'region3', x: 101, y: 238, w: 52, h: 16 }, // 2.0 전용 플레이 시간
             { name: 'region4', x: 86, y: 261, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
         ];
@@ -70,9 +70,34 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
             ocr[name] = text.trim();
         }
 
-        console.log(`ocr: ${ocr}`)
+        for(const [key, value] of Object.entries(ocr)) {
+            console.log(`ocr: ${key}: ${value}`);
+        }
 
         return parseClashV2Info(ocr);
+    }
+
+    async function performScoreOCR(imageUrl) {
+        const img = await loadImage(imageUrl);
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const ctx = tempCanvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const opts = {
+            tessedit_ocr_engine_mode: 1,
+            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+            tessedit_char_whitelist: '0123456789,' // 숫자 + 콤마
+        };
+
+        // eng만 사용하는게 숫자 인식에 좋다고 함
+        const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng', opts);
+
+        // 콤마 제거 및 숫자 변환
+        const scoreText = text.replace(/[^0-9]/g, "");
+        return parseInt(scoreText, 10) || 0;
     }
 
 
@@ -81,26 +106,55 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
         const files = Array.from(e.target.files);
         setResults([]);
         setFileList(files);
-        setProgress({ current: 0, total: files.length });
 
-        for (let idx = 0; idx < files.length; idx++) {
+        const fileGroups = {}; // { "0": { main: File, score: File }, "1": ... }
+
+        files.forEach(file => {
+            const name = file.name.replace(/\.[^.]+$/, ""); // 확장자 제거
+
+            if (name.endsWith('_score')) {
+                const index = name.replace('_score', '');
+                if (!fileGroups[index]) fileGroups[index] = {};
+                fileGroups[index].score = file;
+            } else {
+                const index = name;
+                if (!fileGroups[index]) fileGroups[index] = {};
+                fileGroups[index].main = file;
+            }
+        });
+
+        const sortedIndices = Object.keys(fileGroups).sort((a, b) => Number(a) - Number(b));
+        setProgress({ current: 0, total: sortedIndices.length });
+
+        for (let idx = 0; idx < sortedIndices.length; idx++) {
+            const indexKey = sortedIndices[idx];
+            const { main: mainFile, score: scoreFile } = fileGroups[indexKey];
+
             const file = files[idx];
             console.log(`🔄 [${idx + 1}/${files.length}] ${file.name} 처리 시작`);
 
-            const url = URL.createObjectURL(file);
+            const mainUrl = URL.createObjectURL(mainFile);
+            const scoreUrl = URL.createObjectURL(scoreFile);
 
             try {
+
                 // 1) OCR로 게임 정보 추출
                 console.time(`OCR ${idx}`);
                 setDebugInfo(`파일 ${idx + 1}/${files.length} OCR 중...`);
-                const gameInfo = await performOCR(url);
-                console.log('→ OCR 완료:', gameInfo);
+                const gameInfoPromise = performOCR(mainUrl);
+                const scorePromise = performScoreOCR(scoreUrl);
+
+                const [gameInfo, scoreFromImage] = await Promise.all([
+                    gameInfoPromise,
+                    scorePromise
+                ]);
+                console.log('→ OCR 완료:', gameInfo, scoreFromImage);
                 console.timeEnd(`OCR ${idx}`);
 
                 // 2) 셀 분할
                 console.time(`slice ${idx}`);
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
-                const img = await loadImage(url);
+                const img = await loadImage(mainUrl);
                 const canvas = canvasRef.current;
                 canvas.width = img.width;
                 canvas.height = img.height;
@@ -195,10 +249,11 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 const resultObject = {
                     rank,
                     grade: gameInfo.grade,
-                    score: gameInfo.score,
+                    score: scoreFromImage,
                     duration: gameInfo.duration,
                     sideGrade: gameInfo.sideGrade,
-                    arr: shortNames
+                    arr: shortNames.slice(0, 9), // 첫 줄 9사도 = 셰이디의 차원
+                    sideArr: shortNames.slice(9) // 두번째 줄 9사도 = 림의 이면세계
                 };
 
                 // 결과 로깅
@@ -274,7 +329,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 }]);
                 setProgress(p => ({ current: p.current + 1, total: p.total }));
             } finally {
-                URL.revokeObjectURL(url);
+                URL.revokeObjectURL(mainUrl);
             }
         } // 파일 수만큼 반복 완료
 
@@ -343,63 +398,73 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 </h3>
 
                 <div className="grid gap-4">
-                    {fileList.map((file, i) => (
-                        <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-center mb-3">
-                                <h4 className="font-semibold text-gray-800 truncate mr-4">
-                                    파일 {i + 1}: {file.name}
-                                </h4>
-                                {results[i] && (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        ✅ 분석 완료
-                                    </span>
-                                )}
-                            </div>
-
-                            <div className="flex flex-col gap-4">
-                                <div>
-                                    <img
-                                        src={URL.createObjectURL(file)}
-                                        alt={file.name}
-                                        className="w-full object-cover rounded-lg border border-gray-200"
-                                    />
+                    {fileList
+                        .filter(file => !file.name.includes('_score'))
+                        .sort((a, b) => {
+                            const numA = parseInt(a.name, 10);
+                            const numB = parseInt(b.name, 10);
+                            return numA - numB;
+                        })
+                        .map((file, i) => (
+                            <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-semibold text-gray-800 truncate mr-4">
+                                        파일 {i + 1}: {file.name}
+                                    </h4>
                                     {results[i] && (
-                                        <div className='flex'>
-                                            <div className="w-[330px] bg-gray-50 rounded-lg p-4">
-                                                <div className="flex-col flex  items-center justify-center w-[300px]">
-                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">단계</div>
-                                                        <div className="text-lg font-bold text-blue-600">{results[i].grade}</div>
-                                                    </div>
-                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">점수</div>
-                                                        <div className="text-lg font-bold text-green-600">{results[i].score?.toLocaleString()}</div>
-                                                    </div>
-                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">시간</div>
-                                                        <div className="text-lg font-bold text-purple-600">{results[i].duration}초</div>
-                                                    </div>
-                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">이면세계</div>
-                                                        <div className="text-lg font-bold text-orange-600">{results[i].sideGrade}</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-3 border border-gray-200 w-[480px]">
-                                                <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">캐릭터 배열</div>
-                                                <code className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                    {results[i].arr.slice(0, 9).join(', ')}
-                                                    <br />
-                                                    {results[i].arr.slice(9).join(', ')}
-                                                </code>
-                                            </div>
-                                        </div>
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            ✅ 분석 완료
+                                        </span>
                                     )}
                                 </div>
 
+                                <div className="flex flex-col gap-4">
+                                    <div>
+                                        <img
+                                            src={URL.createObjectURL(file)}
+                                            alt={file.name}
+                                            className="w-full object-cover rounded-lg border border-gray-200"
+                                        />
+                                        {results[i] && (
+                                            <div className='flex'>
+                                                <div className="w-[330px] bg-gray-50 rounded-lg p-4">
+                                                    <div className="flex-col flex  items-center justify-center w-[300px]">
+                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">단계</div>
+                                                            <div className="text-lg font-bold text-blue-600">{results[i].grade}</div>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">점수</div>
+                                                            <div className="text-lg font-bold text-green-600">{results[i].score?.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">시간</div>
+                                                            <div className="text-lg font-bold text-purple-600">{results[i].duration}초</div>
+                                                        </div>
+                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">이면세계</div>
+                                                            <div className="text-lg font-bold text-orange-600">{results[i].sideGrade}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">캐릭터 배열</div>
+                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                                        {results[i].arr.join(', ')}
+
+                                                    </div>
+                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+
+                                                        {results[i].sideArr.join(', ')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
                 </div>
             </div>
 
