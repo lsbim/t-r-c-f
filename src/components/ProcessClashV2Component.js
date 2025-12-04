@@ -70,7 +70,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
             ocr[name] = text.trim();
         }
 
-        for(const [key, value] of Object.entries(ocr)) {
+        for (const [key, value] of Object.entries(ocr)) {
             console.log(`ocr: ${key}: ${value}`);
         }
 
@@ -130,8 +130,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
             const indexKey = sortedIndices[idx];
             const { main: mainFile, score: scoreFile } = fileGroups[indexKey];
 
-            const file = files[idx];
-            console.log(`🔄 [${idx + 1}/${files.length}] ${file.name} 처리 시작`);
+            console.log(`🔄 [${idx + 1}/${sortedIndices.length}] ${indexKey}.png 처리 시작`);
 
             const mainUrl = URL.createObjectURL(mainFile);
             const scoreUrl = URL.createObjectURL(scoreFile);
@@ -140,7 +139,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 1) OCR로 게임 정보 추출
                 console.time(`OCR ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} OCR 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} OCR 중...`);
                 const gameInfoPromise = performOCR(mainUrl);
                 const scorePromise = performScoreOCR(scoreUrl);
 
@@ -153,7 +152,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 2) 셀 분할
                 console.time(`slice ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 분할 중...`);
                 const img = await loadImage(mainUrl);
                 const canvas = canvasRef.current;
                 canvas.width = img.width;
@@ -174,7 +173,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 3) 배치 임베딩
                 console.time(`Embed ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 임베딩 중...`);
                 const urls = cells.map(c => c.url);
                 const embs = await batchEmbed(urls, canvasRef, ort, session);
                 cells.forEach((c, i) => c.emb = embs[i]);
@@ -194,7 +193,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 console.timeEnd(`sims ${idx}`);
 
                 // 4) 매칭 & 예측 이름 추출
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 매칭 중...`);
                 console.time(`match ${idx}`);
                 const names = await Promise.all(cells.map(async cell => {
                     let best = { score: -1, name: '' };
@@ -242,9 +241,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
 
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
-                const baseName = file.name.replace(/\.[^.]+$/, "");  // "0"
-                const fileIdx = parseInt(baseName, 10);
-                const rank = Number.isNaN(fileIdx) ? null : idx + 1;
+                const rank = idx + 1;
 
                 const resultObject = {
                     rank,
@@ -258,7 +255,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 결과 로깅
                 console.log(
-                    `🔍 [${file.name}] 셀 유사도 → ` +
+                    `🔍 [${idx}.png] 셀 유사도 → ` +
                     sims.map(({ name, score }) => {
                         if (score <= 0.935) {
                             console.warn('🚨 ' + name + '의 유사도가 0.935 보다 낮습니다: ' + score);
