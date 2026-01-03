@@ -95,10 +95,13 @@ export function sliceFrontierCells() {
 }
 
 // 차원 대충돌 2.0
-export function sliceClashV2Cells() {
+export function sliceClashV2Cells(type) {
   // 사진 크기는 왼쪽 위 시작점부터 55X45 크기로 자른다.
   const CELL_WIDTH = 55;
   const CELL_HEIGHT = 45;
+
+  const SKILL_CELL_WIDTH = 52;
+  const SKILL_CELL_HEIGHT = 45;
 
   // 1~9번 셀 (셰이디의 차원)
   const firstRow = [
@@ -128,17 +131,69 @@ export function sliceClashV2Cells() {
     { x: 800, y: 223 },
   ];
 
+  const thirdRow = [
+    { x: 260, y: 349 },
+    { x: 329, y: 349 },
+    { x: 398, y: 349 },
+  ];
+
   // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
-  const rects = [
+  const rects = type === 'slice' ? [
     ...firstRow.map((pos, idx) => ({
-      index: idx + 1,
+      index: idx,
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
       h: CELL_HEIGHT
     })),
     ...secondRow.map((pos, idx) => ({
-      index: idx + 10,
+      index: idx + 9,
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    }))
+  ] : [
+    ...firstRow.map((pos, idx) => ({
+      index: idx,
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    })),
+    ...secondRow.map((pos, idx) => ({
+      index: idx + 9,
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    })),
+    ...thirdRow.map((pos, idx) => ({
+      index: idx + 18,
+      x: pos.x,
+      y: pos.y,
+      w: SKILL_CELL_WIDTH,
+      h: SKILL_CELL_HEIGHT
+    }))
+  ];
+
+  return rects;
+}
+
+// 차원 대충돌 2.0 이면의파편
+export function sliceClashV2SideSkills() {
+  const CELL_WIDTH = 52;
+  const CELL_HEIGHT = 45;
+
+  const firstRow = [
+    { x: 260, y: 349 },
+    { x: 329, y: 349 },
+    { x: 398, y: 349 },
+  ];
+
+  const rects = [
+    ...firstRow.map((pos, idx) => ({
+      index: idx + 1,
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,

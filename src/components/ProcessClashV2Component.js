@@ -4,8 +4,9 @@ import Tesseract from 'tesseract.js';
 import { getAverageColor, getClosestAttribute } from '../utils/colorCompareFunction';
 import { batchEmbed } from '../utils/embeddingFunction';
 import { loadImage, parseClashV2Info } from '../utils/function';
-import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
+import { applyBinarization, applyPreprocessing, applyPreprocessingV2, invertColors, preprocessCanvas } from '../utils/ocrFunction';
 import { sliceClashV2Cells } from '../utils/sliceCells';
+import { loadTemplates, matchDigit, templateImages } from '../utils/template';
 
 const THRESH = 0.8;
 
@@ -44,30 +45,44 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
     async function performOCR(imageUrl) {
         const regions = [
             { name: 'region1', x: 17, y: 3, w: 105, h: 27 }, // 2.0 전용 단계
-            // { name: 'region2', x: 56, y: 214, w: 160, h: 19 }, // 2.0 전용 점수
-            { name: 'region3', x: 101, y: 238, w: 52, h: 16 }, // 2.0 전용 플레이 시간
-            { name: 'region4', x: 86, y: 261, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
+            { name: 'region2', x: 58, y: 230, w: 145, h: 14 }, // 2.0 전용 점수
+            { name: 'region3', x: 101, y: 258, w: 53, h: 18 }, // 2.0 전용 플레이 시간
+            { name: 'region4', x: 86, y: 289, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
+            { name: 'region5', x: 305, y: 392, w: 7, h: 11, type: 'small_number' }, // 2.0 전용 이면의파편 레벨
+            { name: 'region6', x: 374, y: 392, w: 7, h: 11, type: 'small_number' },
+            { name: 'region7', x: 443, y: 392, w: 7, h: 11, type: 'small_number' },
         ];
+
+        if (templateImages.length === 0) await loadTemplates();
+
         const img = await loadImage(imageUrl);
         const ocr = {};
 
-        for (const { name, x, y, w, h } of regions) {
+        for (const { name, x, y, w, h, type } of regions) {
             let off = document.createElement('canvas');
-            off.width = w; off.height = h;
+            off.width = w;
+            off.height = h;
             off.getContext('2d', { willReadFrequently: true }).drawImage(img, x, y, w, h, 0, 0, w, h);
 
-            const opts = name === 'region1' ? {
-                tessedit_ocr_engine_mode: 1,
-                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-                tessedit_char_whitelist: '0123456789단계'
-            } : {
-                tessedit_ocr_engine_mode: 1,
-                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-                tessedit_char_whitelist: '0123456789:,'
-            };
+            if (type === 'small_number') {
+                ocr[name] = matchDigit(off);
+                continue;
+            } else {
+                const opts = name === 'region1' | 'region4' ? {
+                    tessedit_ocr_engine_mode: 1,
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                    tessedit_char_whitelist: '0123456789단계'
+                } : {
+                    tessedit_ocr_engine_mode: 1,
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                    tessedit_char_whitelist: '0123456789:,'
+                };
 
-            const { data: { text } } = await Tesseract.recognize(off, 'kor+eng', opts);
-            ocr[name] = text.trim();
+                const { data: { text } } = await Tesseract.recognize(off, 'kor+eng', opts);
+
+                ocr[name] = text.trim();
+            }
+
         }
 
         for (const [key, value] of Object.entries(ocr)) {
@@ -77,89 +92,38 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
         return parseClashV2Info(ocr);
     }
 
-    async function performScoreOCR(imageUrl) {
-        const img = await loadImage(imageUrl);
-
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
-        const ctx = tempCanvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-
-        const opts = {
-            tessedit_ocr_engine_mode: 1,
-            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-            tessedit_char_whitelist: '0123456789,' // 숫자 + 콤마
-        };
-
-        // eng만 사용하는게 숫자 인식에 좋다고 함
-        const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng', opts);
-
-        // 콤마 제거 및 숫자 변환
-        const scoreText = text.replace(/[^0-9]/g, "");
-        return parseInt(scoreText, 10) || 0;
-    }
-
-
     const handleFiles = async e => {
         if (!session) return;
         const files = Array.from(e.target.files);
         setResults([]);
         setFileList(files);
+        setProgress({ current: 0, total: files.length });
 
-        const fileGroups = {}; // { "0": { main: File, score: File }, "1": ... }
+        for (let idx = 0; idx < files.length; idx++) {
+            const file = files[idx];
+            console.log(`🔄 [${idx + 1}/${files.length}] ${file.name}.png 처리 시작`);
 
-        files.forEach(file => {
-            const name = file.name.replace(/\.[^.]+$/, ""); // 확장자 제거
-
-            if (name.endsWith('_score')) {
-                const index = name.replace('_score', '');
-                if (!fileGroups[index]) fileGroups[index] = {};
-                fileGroups[index].score = file;
-            } else {
-                const index = name;
-                if (!fileGroups[index]) fileGroups[index] = {};
-                fileGroups[index].main = file;
-            }
-        });
-
-        const sortedIndices = Object.keys(fileGroups).sort((a, b) => Number(a) - Number(b));
-        setProgress({ current: 0, total: sortedIndices.length });
-
-        for (let idx = 0; idx < sortedIndices.length; idx++) {
-            const indexKey = sortedIndices[idx];
-            const { main: mainFile, score: scoreFile } = fileGroups[indexKey];
-
-            console.log(`🔄 [${idx + 1}/${sortedIndices.length}] ${indexKey}.png 처리 시작`);
-
-            const mainUrl = URL.createObjectURL(mainFile);
-            const scoreUrl = URL.createObjectURL(scoreFile);
+            const url = URL.createObjectURL(file);
 
             try {
 
                 // 1) OCR로 게임 정보 추출
                 console.time(`OCR ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} OCR 중...`);
-                const gameInfoPromise = performOCR(mainUrl);
-                const scorePromise = performScoreOCR(scoreUrl);
-
-                const [gameInfo, scoreFromImage] = await Promise.all([
-                    gameInfoPromise,
-                    scorePromise
-                ]);
-                console.log('→ OCR 완료:', gameInfo, scoreFromImage);
+                setDebugInfo(`파일 ${idx + 1}/${files.length} OCR 중...`);
+                const gameInfo = await performOCR(url);
+                console.log('→ OCR 완료:', gameInfo);
                 console.timeEnd(`OCR ${idx}`);
 
                 // 2) 셀 분할
                 console.time(`slice ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 분할 중...`);
-                const img = await loadImage(mainUrl);
+                setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
+                const img = await loadImage(url);
                 const canvas = canvasRef.current;
                 canvas.width = img.width;
                 canvas.height = img.height;
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 ctx.drawImage(img, 0, 0);
-                const rects = sliceClashV2Cells();
+                const rects = sliceClashV2Cells('embed');
                 const cells = rects.map((rect, i) => {
                     const off = document.createElement('canvas');
                     off.width = rect.w;
@@ -173,7 +137,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 // 3) 배치 임베딩
                 console.time(`Embed ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 임베딩 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
                 const urls = cells.map(c => c.url);
                 const embs = await batchEmbed(urls, canvasRef, ort, session);
                 cells.forEach((c, i) => c.emb = embs[i]);
@@ -193,7 +157,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 console.timeEnd(`sims ${idx}`);
 
                 // 4) 매칭 & 예측 이름 추출
-                setDebugInfo(`파일 ${idx + 1}/${sortedIndices.length} 매칭 중...`);
+                setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
                 console.time(`match ${idx}`);
                 const names = await Promise.all(cells.map(async cell => {
                     let best = { score: -1, name: '' };
@@ -243,14 +207,28 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
                 const rank = idx + 1;
 
+                const sideSkillNames = shortNames.slice(18, 21);
+                const sideSkills = sideSkillNames
+                    .map((name, index) => {
+                        if (name !== null && gameInfo.sideSkills[index] > 0) {
+                            return {
+                                name: name,
+                                level: gameInfo.sideSkills[index],
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(skill => skill !== null);
+
                 const resultObject = {
                     rank,
                     grade: gameInfo.grade,
-                    score: scoreFromImage,
+                    score: gameInfo.score,
                     duration: gameInfo.duration,
                     sideGrade: gameInfo.sideGrade,
                     arr: shortNames.slice(0, 9), // 첫 줄 9사도 = 셰이디의 차원
-                    sideArr: shortNames.slice(9) // 두번째 줄 9사도 = 림의 이면세계
+                    sideArr: shortNames.slice(9, 18), // 두번째 줄 9사도 = 림의 이면세계
+                    sideSkills: sideSkills
                 };
 
                 // 결과 로깅
@@ -326,7 +304,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 }]);
                 setProgress(p => ({ current: p.current + 1, total: p.total }));
             } finally {
-                URL.revokeObjectURL(mainUrl);
+                URL.revokeObjectURL(url);
             }
         } // 파일 수만큼 반복 완료
 
@@ -418,7 +396,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                                 <div className="flex flex-col gap-4">
                                     <div>
                                         <img
-                                            src={URL.createObjectURL(file)}
+                                            src={URL?.createObjectURL(file)}
                                             alt={file.name}
                                             className="w-full object-cover rounded-lg border border-gray-200"
                                         />
@@ -445,14 +423,22 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                                                     </div>
                                                 </div>
                                                 <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
-                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">캐릭터 배열</div>
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">캐릭터 배열</div>
                                                     <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
                                                         {results[i].arr.join(', ')}
-
                                                     </div>
                                                     <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-
                                                         {results[i].sideArr.join(', ')}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">이면의 파편</div>
+                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto pr-24">
+                                                        {results[i].sideSkills.length > 0
+                                                            ? results[i].sideSkills.map(skill => (
+                                                                <div key={i + skill.name}>
+                                                                    {skill.name} (Lv.{skill.level})
+                                                                </div>
+                                                            ))
+                                                            : '스킬 없음'}
                                                     </div>
                                                 </div>
                                             </div>

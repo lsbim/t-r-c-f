@@ -16,7 +16,8 @@ const ImageFilterComponent = () => {
         '그레이스케일 + 대비 + 블러',
         '그레이스케일 + 대비 + 블러 + 색반전',
         '그레이스케일+대비+블러+색반전+이진화',
-        '색반전 + 그레이스케일 + 이진화'
+        '색반전 + 그레이스케일 + 이진화',
+        '도려내기 가공'
     ];
 
     // 업로드된 이미지를 읽어서 <img> 에 세팅
@@ -68,12 +69,24 @@ const ImageFilterComponent = () => {
             invertColors(c4);
             preprocessCanvas(c4); // 그레이스케일+이진화
 
+            // 이미지 도려내기
+            const c5 = document.createElement('canvas');
+            const cutX = 305
+            const cutY = 392
+            const cutW = 7
+            const cutH = 11
+
+            c5.width = cutW;
+            c5.height = cutH;
+            c5.getContext('2d', { willReadFrequently: true }).drawImage(img, cutX, cutY, cutW, cutH, 0, 0, cutW, cutH);
+
             setSteps([
                 c0.toDataURL(),
                 c1.toDataURL(),
                 c2.toDataURL(),
                 c3.toDataURL(),
-                c4.toDataURL()
+                c4.toDataURL(),
+                c5.toDataURL()
             ]);
         };
         img.src = src;
@@ -83,7 +96,7 @@ const ImageFilterComponent = () => {
     }, [src]);
 
     return (
-        <div className="w-[1024] flex flex-col justify-center items-center gap-y-2">
+        <div className="w-[1024] flex flex-col justify-center items-center gap-y-2 mb-4">
             <div className='font-bold'>
                 이진화는 경계가 사라져 OCR 오인식이 잦음
             </div>
@@ -104,7 +117,7 @@ const ImageFilterComponent = () => {
                             <img
                                 src={dataUrl}
                                 alt={labels[i]}
-                                className="border rounded max-w-full h-auto"
+                                className="border rounded"
                             />
                         </div>
                     ))}

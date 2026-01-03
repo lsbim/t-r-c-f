@@ -2,12 +2,13 @@ import { Link, useLocation } from "react-router-dom";
 
 const HeaderNav = () => {
     const { pathname } = useLocation();
+    // console.log(pathname)
 
     return (
         <div className="w-full flex justify-center items-center py-4 shadow-md gap-10 mb-[100px]">
             <Link
                 to={"/slice"}
-                className={`cursor-pointer hover:text-gray-600 duration-300 font-bold ${pathname.startsWith("/slice") || pathname.endsWith("/") ? "" : "text-gray-400"}`}>
+                className={`cursor-pointer hover:text-gray-600 duration-300 font-bold ${pathname.startsWith("/slice") || pathname === "/" ? "" : "text-gray-400"}`}>
                 캐릭터 비교용 이미지 추출
             </Link>
             <Link

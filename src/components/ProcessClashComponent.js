@@ -205,9 +205,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
 
 
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
-                const baseName = file.name.replace(/\.[^.]+$/, "");  // "0"
-                const fileIdx = parseInt(baseName, 10);
-                const rank = Number.isNaN(fileIdx) ? null : idx + 1;
+                const rank = idx + 1;
 
                 const resultObject = {
                     rank,

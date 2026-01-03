@@ -136,6 +136,43 @@ export function applyAdaptiveBinarization(canvas) {
     return canvas;
 }
 
+export function applyPreprocessingV2(sourceCanvas, scale = 1) {
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+
+    const scaledCanvas = document.createElement('canvas');
+    const padding = 20;
+    scaledCanvas.width = (w * scale) + (padding * 2);
+    scaledCanvas.height = (h * scale) + (padding * 2);
+    const ctx = scaledCanvas.getContext('2d', { willReadFrequently: true });
+
+    // 흰 배경(여백)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, scaledCanvas.width, scaledCanvas.height);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sourceCanvas, 0, 0, w, h, padding, padding, w * scale, h * scale);
+
+    const imageData = ctx.getImageData(0, 0, scaledCanvas.width, scaledCanvas.height);
+    const data = imageData.data;
+
+    const threshold = 160;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const brightness = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        const color = brightness > threshold ? 0 : 255;
+
+        data[i] = color;     // R
+        data[i + 1] = color; // G
+        data[i + 2] = color; // B
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    return scaledCanvas;
+}
+
 export function extractGradeRobust(region1) {
     // 여러 패턴을 시도해보는 방식
     const patterns = [
