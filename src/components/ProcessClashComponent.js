@@ -333,7 +333,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
 
             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
                 <label className="block text-lg font-semibold text-gray-800 mb-3">
-                    🎨 분석할 게임 스크린샷 (100여장)
+                    🎨 분석할 게임 스크린샷
                 </label>
                 <input
                     type="file"

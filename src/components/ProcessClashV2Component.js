@@ -200,14 +200,14 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 }));
                 console.timeEnd(`match ${idx}`);
 
-                const shortNames = names.filter(n => n !== null);
-                console.log(`✅ [${idx + 1}] 예측(short):`, shortNames);
+                const arr = names.slice(0, 9).filter(n => n !== null); // 셰이디의 차원
+                const sideArr = names.slice(9, 18).filter(n => n !== null); // 림의 이면세계
 
 
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
                 const rank = idx + 1;
 
-                const sideSkillNames = shortNames.slice(18, 21);
+                const sideSkillNames = names.slice(18, 21);
                 const sideSkills = sideSkillNames
                     .map((name, index) => {
                         if (name !== null && gameInfo.sideSkills[index] > 0) {
@@ -226,8 +226,8 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                     score: gameInfo.score,
                     duration: gameInfo.duration,
                     sideGrade: gameInfo.sideGrade,
-                    arr: shortNames.slice(0, 9), // 첫 줄 9사도 = 셰이디의 차원
-                    sideArr: shortNames.slice(9, 18), // 두번째 줄 9사도 = 림의 이면세계
+                    arr: arr,
+                    sideArr: sideArr,
                     sideSkills: sideSkills
                 };
 
@@ -350,7 +350,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
                 <label className="block text-lg font-semibold text-gray-800 mb-3">
-                    🎨 분석할 게임 스크린샷 (100여장)
+                    🎨 분석할 게임 스크린샷
                 </label>
                 <input
                     type="file"
