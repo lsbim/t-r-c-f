@@ -169,10 +169,13 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                     let finalName = null;
                     if (best?.score >= THRESH) {
-                        let baseName = best.name.split('_')[0]; // 예: "우로스"
+                        // let baseName = best.name.split('_')[0]; // 예: "우로스"
+                        const parts = best.name.split('_');
+                        const charName = parts[0];
+                        const skinName = parts.slice(1).join(' ') || null;
 
                         // '우로스'인 경우에만 색상 분석 수행
-                        if (baseName.startsWith('우로스')) {
+                        if (charName.startsWith('우로스')) {
                             const cellImg = await loadImage(cell.url);
                             const tempCanvas = document.createElement('canvas');
                             tempCanvas.width = cell.w;
@@ -187,21 +190,25 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                             const attribute = getClosestAttribute(avgColor);
 
                             if (attribute) {
-                                finalName = `${baseName}(${attribute})`; // 예) "우로스(우울)"
+                                finalName = { charName: `${charName}(${attribute})`, skinName }; // 예) "우로스(우울)"
                             } else {
-                                finalName = baseName; // 색상 매칭 실패 시 기본 이름 사용
+                                finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
                             }
                         } else {
                             // 우로스가 아니면 기본 이름 사용
-                            finalName = baseName;
+                            finalName = { charName, skinName };
                         }
                     }
                     return finalName;
                 }));
                 console.timeEnd(`match ${idx}`);
 
-                const arr = names.slice(0, 9).filter(n => n !== null); // 셰이디의 차원
-                const sideArr = names.slice(9, 18).filter(n => n !== null); // 림의 이면세계
+                const arr = names.slice(0, 9).filter(Boolean).map(n => n.charName); // 셰이디의 차원
+                const sideArr = names.slice(9, 18).filter(Boolean).map(n => n.charName); // 림의 이면세계
+
+                const skinArr = names.slice(0, 9).filter(Boolean).map(n => n.skinName);
+                const sideSkinArr = names.slice(9, 18).filter(Boolean).map(n => n.skinName);
+
 
 
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
@@ -209,10 +216,10 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
 
                 const sideSkillNames = names.slice(18, 21);
                 const sideSkills = sideSkillNames
-                    .map((name, index) => {
-                        if (name !== null && gameInfo.sideSkills[index] > 0) {
+                    .map((item, index) => {
+                        if (item !== null && gameInfo.sideSkills[index] > 0) {
                             return {
-                                name: name,
+                                name: item.charName,
                                 level: gameInfo.sideSkills[index],
                             };
                         }
@@ -228,6 +235,8 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                     sideGrade: gameInfo.sideGrade,
                     arr: arr,
                     sideArr: sideArr,
+                    skinArr: skinArr,
+                    sideSkinArr: sideSkinArr,
                     sideSkills: sideSkills
                 };
 
@@ -299,8 +308,11 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                     grade: 0,
                     score: 0,
                     duration: 0,
-                    timeBonus: 0,
-                    arr: []
+                    arr: [],
+                    skinArr: [],
+                    sideArr: [],
+                    sideSkinArr: [],
+                    sideSkills: []
                 }]);
                 setProgress(p => ({ current: p.current + 1, total: p.total }));
             } finally {
@@ -423,12 +435,19 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                                                     </div>
                                                 </div>
                                                 <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
-                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">캐릭터 배열</div>
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사도 배열</div>
                                                     <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
                                                         {results[i].arr.join(', ')}
                                                     </div>
                                                     <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
                                                         {results[i].sideArr.join(', ')}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사복 배열</div>
+                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                                        {results[i].skinArr.join(', ')}
+                                                    </div>
+                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                                        {results[i].sideSkinArr.join(', ')}
                                                     </div>
                                                     <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">이면의 파편</div>
                                                     <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto pr-24">

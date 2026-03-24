@@ -1,7 +1,3 @@
-// const imgEl = await loadImage(url);
-// const canvasRef = useRef(document.createElement('canvas'));
-// import * as ort from 'onnxruntime-web';
-
 import { loadImage } from "./function";
 
 // 이미지 전처리 함수 - CLIP용으로 224x224 크기로 정규화
@@ -14,8 +10,35 @@ export function onnxPreprocess(imgEl, canvasRef, ort) {
     canvas.width = targetSize;
     canvas.height = targetSize;
 
-    // 이미지를 캔버스에 리사이즈하여 그리기
-    ctx.drawImage(imgEl, 0, 0, targetSize, targetSize);
+    // 레터박스 배경 (CLIP 정규화 평균값에 가까운 중립 회색)
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, targetSize, targetSize);
+
+    const scale = Math.min(targetSize / imgEl.width, targetSize / imgEl.height);
+    const newWidth = Math.round(imgEl.width * scale);
+    const newHeight = Math.round(imgEl.height * scale);
+    const dx = Math.round((targetSize - newWidth) / 2);
+    const dy = Math.round((targetSize - newHeight) / 2);
+    ctx.drawImage(imgEl, dx, dy, newWidth, newHeight);
+
+    // 이미지상 레벨태그 마스킹
+    const maskW = Math.round(newWidth * 0.32); // 캐릭터 영역의 32%
+    const maskH = Math.round(newHeight * 0.25); // 캐릭터 영역의 25%
+    ctx.fillStyle = '#808080'; // 지우지 말고 놔둘 것
+    ctx.fillRect(
+        dx + newWidth - maskW,  // 캐릭터 우측 끝에서 maskW만큼 왼쪽
+        dy + newHeight - maskH,  // 캐릭터 하단 끝에서 maskH만큼 위
+        maskW,
+        maskH
+    );
+
+    // 성격 태그 마스킹
+    // const cornerW = Math.round(newWidth * 0.22);
+    // const cornerH = Math.round(newHeight * 0.22);
+    // ctx.fillRect(dx, dy, cornerW, cornerH);
+
+
+    // -------------텐서 변환-----------------
 
     const imageData = ctx.getImageData(0, 0, targetSize, targetSize);
     const pixels = imageData.data; // RGBA 형식

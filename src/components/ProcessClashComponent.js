@@ -169,10 +169,13 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
 
                     let finalName = null;
                     if (best?.score >= THRESH) {
-                        let baseName = best.name.split('_')[0]; // 예: "우로스"
+                        // let baseName = best.name.split('_')[0]; // 예: "우로스"
+                        const parts = best.name.split('_');
+                        const charName = parts[0];
+                        const skinName = parts.slice(1).join(' ') || null;
 
                         // '우로스'인 경우에만 색상 분석 수행
-                        if (baseName.startsWith('우로스')) {
+                        if (charName.startsWith('우로스')) {
                             const cellImg = await loadImage(cell.url);
                             const tempCanvas = document.createElement('canvas');
                             tempCanvas.width = cell.w;
@@ -187,21 +190,24 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                             const attribute = getClosestAttribute(avgColor);
 
                             if (attribute) {
-                                finalName = `${baseName}(${attribute})`; // 예) "우로스(우울)"
+                                finalName = { charName: `${charName}(${attribute})`, skinName }; // 예) "우로스(우울)"
                             } else {
-                                finalName = baseName; // 색상 매칭 실패 시 기본 이름 사용
+                                finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
                             }
                         } else {
                             // 우로스가 아니면 기본 이름 사용
-                            finalName = baseName;
+                            finalName = { charName, skinName };
                         }
                     }
                     return finalName;
                 }));
                 console.timeEnd(`match ${idx}`);
 
-                const shortNames = names.filter(n => n !== null);
-                console.log(`✅ [${idx + 1}] 예측(short):`, shortNames);
+                const arr = names.slice(0, 9).filter(Boolean).map(n => n.charName);
+                const skinArr = names.slice(0, 9).filter(Boolean).map(n => n.skinName);
+
+                console.log(`✅ [${idx + 1}] 예측(사도):`, arr);
+                console.log(`✅ [${idx + 1}] 예측(사복):`, skinArr);
 
 
                 // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
@@ -211,7 +217,8 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     rank,
                     grade: gameInfo.grade,
                     duration: gameInfo.duration,
-                    arr: shortNames
+                    arr: arr,
+                    skinArr: skinArr
                 };
 
                 // 결과 로깅
@@ -283,7 +290,8 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     score: 0,
                     duration: 0,
                     timeBonus: 0,
-                    arr: []
+                    arr: [],
+                    skinArr: []
                 }]);
                 setProgress(p => ({ current: p.current + 1, total: p.total }));
             } finally {
@@ -399,12 +407,18 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                                                 </div>
                                             </div>
                                             <div className="bg-white rounded-lg p-3 border border-gray-200 w-[480px]">
-                                                <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">캐릭터 배열</div>
-                                                <code className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                                <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">사도 배열</div>
+                                                <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
                                                     {results[i].arr.slice(0, 5).join(', ')}
                                                     <br />
                                                     {results[i].arr.slice(5).join(', ')}
-                                                </code>
+                                                </div>
+                                                <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">사복 배열</div>
+                                                <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                                    {results[i].skinArr.slice(0, 5).join(', ')}
+                                                    <br />
+                                                    {results[i].skinArr.slice(5).join(', ')}
+                                                </div>
                                             </div>
                                         </div>
                                     )}
