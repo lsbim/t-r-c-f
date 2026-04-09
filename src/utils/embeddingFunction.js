@@ -1,3 +1,4 @@
+import { getAverageColor, getClosestAttribute } from "./colorCompareFunction";
 import { loadImage } from "./function";
 
 // 이미지 전처리 함수 - CLIP용으로 224x224 크기로 정규화
@@ -86,4 +87,62 @@ export async function batchEmbed(imageUrls, canvasRef, ort, session) {
         const norm = Math.hypot(...slice);
         return slice.map(v => v / norm);
     });
+}
+
+const THRESH = 0.8;
+
+export async function matchNames(embs, cells, storedEmbs, idx) {
+
+    console.time(`match ${idx}`);
+
+    const names = await Promise.all(embs.map(async (emb, i) => {
+        const cell = cells[i];
+
+        let best = { score: -1, name: '' };
+        for (const { name, emb: store } of storedEmbs) {
+            let sum = 0;
+            for (let j = 0; j < store.length; j++) sum += store[j] * emb[j];
+            if (sum > best.score) best = { score: sum, name };
+        }
+
+        if (best.score <= 0.935) console.warn(`🚨 유사도 낮음: ${best.name} = ${best.score}`);
+
+        let finalName = null;
+        if (best?.score >= THRESH) {
+            // let baseName = best.name.split('_')[0]; // 예: "우로스"
+            const parts = best.name.split('_');
+            const charName = parts[0];
+            const skinName = parts.slice(1).join(' ') || null;
+
+            // '우로스'인 경우에만 색상 분석 수행
+            if (charName.startsWith('우로스')) {
+                const cellImg = await loadImage(cell.url);
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = cell.w;
+                tempCanvas.height = cell.h;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(cellImg, 0, 0);
+
+                // 색상 추출 영역
+                const roi = { x: 1, y: 15, w: 3, h: 30 };
+
+                const avgColor = getAverageColor(tempCanvas, roi);
+                const attribute = getClosestAttribute(avgColor);
+
+                if (attribute) {
+                    finalName = { charName: `${charName}(${attribute})`, skinName }; // 예) "우로스(우울)"
+                } else {
+                    finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
+                }
+            } else {
+                // 우로스가 아니면 기본 이름 사용
+                finalName = { charName, skinName };
+            }
+        }
+        return finalName;
+    }));
+
+    console.timeEnd(`match ${idx}`);
+
+    return names;
 }

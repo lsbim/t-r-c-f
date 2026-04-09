@@ -1,16 +1,13 @@
 import * as ort from 'onnxruntime-web';
 import { useEffect, useRef, useState } from 'react';
 import Tesseract from 'tesseract.js';
-import { batchEmbed } from '../utils/embeddingFunction';
+import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseFrontierInfo } from '../utils/function';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
 import { sliceFrontierCells } from '../utils/sliceCells';
-import { getAverageColor, getClosestAttribute } from '../utils/colorCompareFunction';
 
-const THRESH = 0.8;
 
 const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
-    const [cells, setCells] = useState([]);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [results, setResults] = useState([]);   // 이제 각 요소가 { grade, score, duration, timeBonus, arr } 형태
     const [storedEmbs, setStoredEmbs] = useState([]);  // { name: string, emb: Float32Array }[]
@@ -41,14 +38,15 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
     }, []);
 
     // 엘리아스 프론티어용 OCR 수행 함수
-    async function performOCR(imageUrl) {
+    async function performOCR(img, idx) {
+        console.time(`OCR ${idx}`);
+
         const regions = [
             { name: 'region1', x: 120, y: 67, w: 101, h: 35 }, // 용암맛
             { name: 'region2', x: 55, y: 107, w: 101, h: 21 }, // 점수
             { name: 'region3', x: 92, y: 131, w: 58, h: 19 }, // 플레이시간
             { name: 'region4', x: 98, y: 153, w: 70, h: 23 }, // 실체의 코인
         ];
-        const img = await loadImage(imageUrl);
         const ocr = {};
 
         for (const { name, x, y, w, h } of regions) {
@@ -86,7 +84,8 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
             ocr[name] = text.trim();
         }
 
-        console.log(ocr)
+        console.log('→ OCR 완료:', ocr);
+        console.timeEnd(`OCR ${idx}`);
 
         return parseFrontierInfo(ocr);
     }
@@ -105,12 +104,7 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
             const url = URL.createObjectURL(file);
 
             try {
-                // 1) OCR로 게임 정보 추출
-                setDebugInfo(`파일 ${idx + 1}/${files.length} OCR 중...`);
-                const gameInfo = await performOCR(url);
-                console.log('→ OCR 완료:', gameInfo);
-
-                // 2) 셀 분할
+                // 1) 셀 분할
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
                 const img = await loadImage(url);
                 const canvas = canvasRef.current;
@@ -129,68 +123,22 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
                 });
                 console.log(`→ 셀 분할 완료 (${cells.length}개)`);
 
-                // 3) 배치 임베딩
+                // 2) 배치 임베딩
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
                 const urls = cells.map(c => c.url);
                 const embs = await batchEmbed(urls, canvasRef, ort, session);
                 cells.forEach((c, i) => c.emb = embs[i]);
                 console.log('→ 배치 임베딩 완료');
 
-                const sims = embs.map(emb => {
-                    let best = { score: -1, name: '' };
-                    for (const { name, emb: store } of storedEmbs) {
-                        const dot = store.reduce((sum, v, i) => sum + v * emb[i], 0);
-                        if (dot > best.score) best = { score: dot, name };
-                    }
-                    return { name: best.name.split('_')[0], score: best.score };
-                });
 
-
-                // 4) 매칭 & 예측 이름 추출
+                // 3) 게임 정보 추출 + 매칭 & 예측 이름 추출
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
-                const names = await Promise.all(cells.map(async (cell) => {
-                    let best = { score: -1, name: '' };
-                    for (const { name, emb } of storedEmbs) {
-                        let sum = 0;
-                        for (let j = 0; j < emb.length; j++) sum += emb[j] * cell.emb[j];
-                        if (sum > best.score) best = { score: sum, name };
-                    }
 
-                    let finalName = null;
-                    if (best?.score >= THRESH) {
-                        // let baseName = best.name.split('_')[0]; // 예: "우로스"
-                        const parts = best.name.split('_');
-                        const charName = parts[0];
-                        const skinName = parts.slice(1).join(' ') || null;
+                const [gameInfo, names] = await Promise.all([
+                    performOCR(img, idx),
+                    matchNames(embs, cells, storedEmbs, idx)
+                ]);
 
-                        // '우로스'인 경우에만 색상 분석 수행
-                        if (charName.startsWith('우로스')) {
-                            const cellImg = await loadImage(cell.url);
-                            const tempCanvas = document.createElement('canvas');
-                            tempCanvas.width = cell.w;
-                            tempCanvas.height = cell.h;
-                            const tempCtx = tempCanvas.getContext('2d');
-                            tempCtx.drawImage(cellImg, 0, 0);
-
-                            // 색상 추출 영역
-                            const roi = { x: 1, y: 15, w: 3, h: 30 };
-
-                            const avgColor = getAverageColor(tempCanvas, roi);
-                            const attribute = getClosestAttribute(avgColor);
-
-                            if (attribute) {
-                                finalName = { charName: `${charName}(${attribute})`, skinName }; // 예) "우로스(우울)"
-                            } else {
-                                finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
-                            }
-                        } else {
-                            // 우로스가 아니면 기본 이름 사용
-                            finalName = { charName, skinName };
-                        }
-                    }
-                    return finalName;
-                    // return best?.score >= THRESH ? best.name.split('_')[0] : null;
-                }));
 
                 const arr = names.slice(0, 9).filter(Boolean).map(n => n.charName);
                 const skinArr = names.slice(0, 9).filter(Boolean).map(n => n.skinName);
@@ -214,22 +162,6 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
                     skinArr: skinArr
                 };
 
-                // 결과 로깅
-                console.log(
-                    `🔍 [${file.name}] 셀 유사도 → ` +
-                    sims.map(({ name, score }) => {
-                        if (score <= 0.935) {
-                            console.warn('🚨 ' + name + '의 유사도가 0.935 보다 낮습니다: ' + score);
-                        }
-
-                        setResultDebug(prev => ({
-                            ...prev,
-                            [rank]: '🚨 ' + name + '의 유사도가 0.935 보다 낮습니다: ' + score
-                        }));
-
-                        return `${name} = ${score.toFixed(3)}`;
-                    }).join(', ')
-                );
 
                 if (results.length > 0 && resultObject.rank !== null) {
                     // 바로 이전 결과와만 비교
@@ -453,60 +385,6 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
                     </pre>
                 </div>
             </div>
-
-            {/* 미리보기용 셀 표시 */}
-            {cells.length > 0 && (
-                <div className="mb-8">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-                        🔍 분할된 셀들 미리보기
-                        <span className="ml-3 text-sm font-normal text-gray-500">마지막 이미지</span>
-                    </h3>
-
-                    <div className="bg-white rounded-xl border border-gray-200 p-6">
-                        {/* 상단 5개 셀 */}
-                        <div className="grid grid-cols-5 gap-3 mb-4">
-                            {cells.slice(0, 5).map((cell, i) => (
-                                <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg p-2 hover:shadow-md transition-shadow">
-                                    <img
-                                        src={cell.url}
-                                        className="w-full h-16 object-cover rounded border border-gray-100"
-                                        alt={`셀 ${i}`}
-                                    />
-                                    <div className="text-center mt-2">
-                                        <div className="text-xs text-gray-500">셀 {i}</div>
-                                        {cell.predicted && (
-                                            <div className="text-xs font-bold text-green-600 mt-1 truncate">
-                                                {cell.predicted.split('_')[0]}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* 하단 4개 셀 */}
-                        <div className="grid grid-cols-4 gap-3 max-w-4xl mx-auto">
-                            {cells.slice(5).map((cell, i) => (
-                                <div key={i + 5} className="bg-gray-50 border border-gray-200 rounded-lg p-2 hover:shadow-md transition-shadow">
-                                    <img
-                                        src={cell.url}
-                                        className="w-full h-16 object-cover rounded border border-gray-100"
-                                        alt={`셀 ${i + 5}`}
-                                    />
-                                    <div className="text-center mt-2">
-                                        <div className="text-xs text-gray-500">셀 {i + 5}</div>
-                                        {cell.predicted && (
-                                            <div className="text-xs font-bold text-green-600 mt-1 truncate">
-                                                {cell.predicted.split('_')[0]}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             <canvas ref={canvasRef} className="hidden" />
         </div>

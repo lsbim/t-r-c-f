@@ -1,13 +1,10 @@
 import * as ort from 'onnxruntime-web';
 import { useEffect, useRef, useState } from 'react';
 import Tesseract from 'tesseract.js';
-import { batchEmbed, onnxPreprocess } from '../utils/embeddingFunction';
+import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseClashInfo } from '../utils/function';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
 import { sliceClashCells } from '../utils/sliceCells';
-import { getAverageColor, getClosestAttribute } from '../utils/colorCompareFunction';
-
-const THRESH = 0.8;
 
 const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -41,7 +38,9 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     }, []);
 
     // OCR 수행 함수 - InfoComponent에서 가져온 로직
-    async function performOCR(imageUrl) {
+    async function performOCR(img, idx) {
+        console.time(`OCR ${idx}`);
+
         const regions = [
             // { name: 'region1', x: 25, y: 2, w: 75, h: 30 }, // 100위전용 단계
             // { name: 'region2', x: 108, y: 86, w: 195, h: 72 }, // 100위전용 데이터종합
@@ -51,7 +50,6 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             // { name: 'region3', x: 143, y: 86, w: 155, h: 20 }, // 300위전용 점수
             // { name: 'region4', x: 189, y: 138, w: 124, h: 17 }, // 300위전용 시간보너스
         ];
-        const img = await loadImage(imageUrl);
         const ocr = {};
 
         for (const { name, x, y, w, h } of regions) {
@@ -87,8 +85,8 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             ocr[name] = text.trim();
         }
 
-        console.log(ocr)
-
+        console.log('→ OCR 완료:', ocr);
+        console.timeEnd(`OCR ${idx}`);
         return parseClashInfo(ocr);
     }
 
@@ -107,14 +105,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             const url = URL.createObjectURL(file);
 
             try {
-                // 1) OCR로 게임 정보 추출
-                console.time(`OCR ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} OCR 중...`);
-                const gameInfo = await performOCR(url);
-                console.log('→ OCR 완료:', gameInfo);
-                console.timeEnd(`OCR ${idx}`);
-
-                // 2) 셀 분할
+                // 1) 셀 분할
                 console.time(`slice ${idx}`);
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
                 const img = await loadImage(url);
@@ -135,7 +126,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 console.log(`→ 셀 분할 완료 (${cells.length}개)`);
                 console.timeEnd(`slice ${idx}`);
 
-                // 3) 배치 임베딩
+                // 2) 배치 임베딩
                 console.time(`Embed ${idx}`);
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
                 const urls = cells.map(c => c.url);
@@ -145,63 +136,13 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 console.timeEnd(`Embed ${idx}`);
 
 
-                console.time(`sims ${idx}`);
-                const sims = embs.map(emb => {
-                    let best = { score: -1, name: '' };
-                    for (const { name, emb: store } of storedEmbs) {
-                        const dot = store.reduce((sum, v, i) => sum + v * emb[i], 0);
-                        if (dot > best.score) best = { score: dot, name };
-                    }
-                    return { name: best.name.split('_')[0], score: best.score };
-                });
-                console.timeEnd(`sims ${idx}`);
-
-                // 4) 매칭 & 예측 이름 추출
+                // 3) 게임 정보 추출 + 매칭 & 예측 이름 추출
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
-                console.time(`match ${idx}`);
-                const names = await Promise.all(cells.map(async cell => {
-                    let best = { score: -1, name: '' };
-                    for (const { name, emb } of storedEmbs) {
-                        let sum = 0;
-                        for (let j = 0; j < emb.length; j++) sum += emb[j] * cell.emb[j];
-                        if (sum > best.score) best = { score: sum, name };
-                    }
 
-                    let finalName = null;
-                    if (best?.score >= THRESH) {
-                        // let baseName = best.name.split('_')[0]; // 예: "우로스"
-                        const parts = best.name.split('_');
-                        const charName = parts[0];
-                        const skinName = parts.slice(1).join(' ') || null;
-
-                        // '우로스'인 경우에만 색상 분석 수행
-                        if (charName.startsWith('우로스')) {
-                            const cellImg = await loadImage(cell.url);
-                            const tempCanvas = document.createElement('canvas');
-                            tempCanvas.width = cell.w;
-                            tempCanvas.height = cell.h;
-                            const tempCtx = tempCanvas.getContext('2d');
-                            tempCtx.drawImage(cellImg, 0, 0);
-
-                            // 색상 추출 영역
-                            const roi = { x: 1, y: 15, w: 3, h: 30 };
-
-                            const avgColor = getAverageColor(tempCanvas, roi);
-                            const attribute = getClosestAttribute(avgColor);
-
-                            if (attribute) {
-                                finalName = { charName: `${charName}(${attribute})`, skinName }; // 예) "우로스(우울)"
-                            } else {
-                                finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
-                            }
-                        } else {
-                            // 우로스가 아니면 기본 이름 사용
-                            finalName = { charName, skinName };
-                        }
-                    }
-                    return finalName;
-                }));
-                console.timeEnd(`match ${idx}`);
+                const [gameInfo, names] = await Promise.all([
+                    performOCR(img, idx),
+                    matchNames(embs, cells, storedEmbs, idx)
+                ]);
 
                 const arr = names.slice(0, 9).filter(Boolean).map(n => n.charName);
                 const skinArr = names.slice(0, 9).filter(Boolean).map(n => n.skinName);
@@ -221,22 +162,6 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     skinArr: skinArr
                 };
 
-                // 결과 로깅
-                console.log(
-                    `🔍 [${file.name}] 셀 유사도 → ` +
-                    sims.map(({ name, score }) => {
-                        if (score <= 0.935) {
-                            console.warn('🚨 ' + name + '의 유사도가 0.935 보다 낮습니다: ' + score);
-                            setResultDebug(prev => ({
-                                ...prev,
-                                [rank]: '🚨 ' + name + '의 유사도가 0.935 보다 낮습니다: ' + score
-                            }));
-                        }
-
-
-                        return `${name} = ${score.toFixed(3)}`;
-                    }).join(', ')
-                );
 
                 if (results.length > 0 && resultObject.rank !== null) {
                     // 바로 이전 결과와만 비교

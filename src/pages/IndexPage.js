@@ -22,7 +22,11 @@ const IndexPage = () => {
                 // setTimeout 안에 await를 직접 넣는 것보다, setTimeout 없이 바로 실행하거나
                 // setTimeout의 콜백 자체를 async로 만드는 것이 좋습니다.
                 // 여기서는 setTimeout을 제거하고 바로 로드합니다.
-                const s = await ort.InferenceSession.create('/models/vision_model.onnx');
+                const s = await ort.InferenceSession.create('/models/vision_model.onnx',
+                    {
+                        executionProviders: ['webgpu', 'wasm'] // GPU 우선, 안되면 WASM
+                    }
+                );
                 setSession(s);
                 setDebugInfo('✅ 모델 준비됨');
                 console.log('ONNX Runtime 초기화 완료.');
