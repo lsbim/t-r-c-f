@@ -2,15 +2,15 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import './index.css';
+import IndexPage from './pages/IndexPage';
 import reportWebVitals from './reportWebVitals';
 import router from './routers/root';
-import IndexPage from './pages/IndexPage';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <RouterProvider router={router}>
     <IndexPage />
-  </RouterProvider>
+  </RouterProvider>,
 );
 
 // If you want to start measuring performance in your app, pass a function

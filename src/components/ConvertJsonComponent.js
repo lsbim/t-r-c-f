@@ -19,7 +19,10 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
     setDebugInfo(`${selectedFiles.length}개 파일 선택됨`);
 
     // 선택된 파일 목록을 콘솔에 출력
-    console.log('선택된 파일들:', selectedFiles.map(f => f.name));
+    console.log(
+      '선택된 파일들:',
+      selectedFiles.map((f) => f.name),
+    );
   };
 
   // 단일 이미지의 임베딩 생성 함수
@@ -41,7 +44,12 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
 
       // 임베딩 추출 - 다양한 출력 키를 시도
       let embedding = null;
-      const possibleKeys = ['image_embeds', 'image_embeddings', 'last_hidden_state', 'pooler_output'];
+      const possibleKeys = [
+        'image_embeds',
+        'image_embeddings',
+        'last_hidden_state',
+        'pooler_output',
+      ];
 
       for (const key of possibleKeys) {
         if (outputs[key]) {
@@ -52,24 +60,25 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
       }
 
       if (!embedding) {
-        throw new Error(`${file.name}: 임베딩을 찾을 수 없습니다. 출력 키: ${Object.keys(outputs).join(', ')}`);
+        throw new Error(
+          `${file.name}: 임베딩을 찾을 수 없습니다. 출력 키: ${Object.keys(outputs).join(', ')}`,
+        );
       }
 
       // 임베딩 정규화 (단위 벡터로 변환)
       const norm = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-      const normalizedEmbedding = embedding.map(val => val / norm);
+      const normalizedEmbedding = embedding.map((val) => val / norm);
 
       // 파일명에서 확장자 제거하여 캐릭터 이름 추출
-      const characterName = file.name.replace(/\.[^/.]+$/, "");
+      const characterName = file.name.replace(/\.[^/.]+$/, '');
 
       // 메모리 정리
       URL.revokeObjectURL(url);
 
       return {
         name: characterName,
-        embedding: normalizedEmbedding
+        embedding: normalizedEmbedding,
       };
-
     } catch (error) {
       console.error(`${file.name} 처리 중 오류:`, error);
       throw error;
@@ -106,19 +115,17 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
 
           // 실시간으로 상태 업데이트
           setEmbeddings({ ...newEmbeddings });
-
         } catch (error) {
           console.error(`❌ ${file.name} 처리 실패:`, error.message);
           // 개별 파일 실패해도 계속 진행
         }
 
         // 각 파일 처리 후 잠시 대기 (브라우저가 다른 작업을 처리할 시간 제공)
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       setDebugInfo(`✅ 모든 임베딩 생성 완료! 총 ${Object.keys(newEmbeddings).length}개`);
       console.log('모든 임베딩 생성 완료:', Object.keys(newEmbeddings));
-
     } catch (error) {
       console.error('임베딩 생성 중 오류:', error);
       setDebugInfo('오류: ' + error.message);
@@ -160,13 +167,15 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
       <h2>🧠 캐릭터 임베딩 생성기</h2>
 
       {/* 상태 정보 표시 */}
-      <div style={{
-        marginBottom: 20,
-        padding: 16,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 8,
-        border: '1px solid #dee2e6'
-      }}>
+      <div
+        style={{
+          marginBottom: 20,
+          padding: 16,
+          backgroundColor: '#f8f9fa',
+          borderRadius: 8,
+          border: '1px solid #dee2e6',
+        }}
+      >
         <div style={{ marginBottom: 8 }}>
           <strong>모델 상태:</strong> {session ? '✅ 준비됨' : '⏳ 로딩 중...'}
         </div>
@@ -174,7 +183,7 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
           <strong>진행 상황:</strong> {progress.current}/{progress.total}
           {progress.total > 0 && (
             <span style={{ marginLeft: 8 }}>
-              ({Math.round(progress.current / progress.total * 100)}%)
+              ({Math.round((progress.current / progress.total) * 100)}%)
             </span>
           )}
         </div>
@@ -185,12 +194,14 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
 
       {/* 파일 선택 영역 */}
       <div style={{ marginBottom: 20 }}>
-        <label style={{
-          display: 'block',
-          marginBottom: 8,
-          fontSize: 16,
-          fontWeight: 'bold'
-        }}>
+        <label
+          style={{
+            display: 'block',
+            marginBottom: 8,
+            fontSize: 16,
+            fontWeight: 'bold',
+          }}
+        >
           📁 캐릭터 이미지 파일들 선택:
         </label>
         <input
@@ -203,7 +214,7 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
             padding: 8,
             width: '100%',
             border: '2px dashed #dee2e6',
-            borderRadius: 4
+            borderRadius: 4,
           }}
         />
         <div style={{ marginTop: 8, fontSize: 14, color: '#6c757d' }}>
@@ -215,21 +226,26 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
       {files.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <h4>선택된 파일들 ({files.length}개):</h4>
-          <div style={{
-            maxHeight: 200,
-            overflowY: 'auto',
-            border: '1px solid #dee2e6',
-            borderRadius: 4,
-            padding: 12,
-            backgroundColor: '#f8f9fa'
-          }}>
+          <div
+            style={{
+              maxHeight: 200,
+              overflowY: 'auto',
+              border: '1px solid #dee2e6',
+              borderRadius: 4,
+              padding: 12,
+              backgroundColor: '#f8f9fa',
+            }}
+          >
             {files.map((file, index) => (
-              <div key={index} style={{
-                marginBottom: 4,
-                fontSize: 14,
-                color: embeddings[file.name.replace(/\.[^/.]+$/, "")] ? '#28a745' : '#6c757d'
-              }}>
-                {embeddings[file.name.replace(/\.[^/.]+$/, "")] ? '✅' : '⏳'} {file.name}
+              <div
+                key={index}
+                style={{
+                  marginBottom: 4,
+                  fontSize: 14,
+                  color: embeddings[file.name.replace(/\.[^/.]+$/, '')] ? '#28a745' : '#6c757d',
+                }}
+              >
+                {embeddings[file.name.replace(/\.[^/.]+$/, '')] ? '✅' : '⏳'} {file.name}
               </div>
             ))}
           </div>
@@ -249,7 +265,7 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
             borderRadius: 6,
             cursor: processing ? 'not-allowed' : 'pointer',
             fontSize: 16,
-            fontWeight: 'bold'
+            fontWeight: 'bold',
           }}
         >
           {processing ? '⏳ 처리 중...' : '🚀 임베딩 생성 시작'}
@@ -266,7 +282,7 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
             borderRadius: 6,
             cursor: Object.keys(embeddings).length === 0 ? 'not-allowed' : 'pointer',
             fontSize: 16,
-            fontWeight: 'bold'
+            fontWeight: 'bold',
           }}
         >
           💾 JSON 파일 다운로드
@@ -276,19 +292,23 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
       {/* 진행률 바 */}
       {progress.total > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{
-            width: '100%',
-            height: 20,
-            backgroundColor: '#e9ecef',
-            borderRadius: 10,
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              width: `${(progress.current / progress.total) * 100}%`,
-              height: '100%',
-              backgroundColor: processing ? '#007bff' : '#28a745',
-              transition: 'width 0.3s ease'
-            }} />
+          <div
+            style={{
+              width: '100%',
+              height: 20,
+              backgroundColor: '#e9ecef',
+              borderRadius: 10,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${(progress.current / progress.total) * 100}%`,
+                height: '100%',
+                backgroundColor: processing ? '#007bff' : '#28a745',
+                transition: 'width 0.3s ease',
+              }}
+            />
           </div>
           <div style={{ textAlign: 'center', marginTop: 4, fontSize: 14 }}>
             {progress.current} / {progress.total} 완료
@@ -298,26 +318,35 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
 
       {/* 결과 미리보기 */}
       {Object.keys(embeddings).length > 0 && (
-        <div style={{
-          marginTop: 20,
-          padding: 16,
-          backgroundColor: '#f8fff9',
-          border: '2px solid #28a745',
-          borderRadius: 8
-        }}>
+        <div
+          style={{
+            marginTop: 20,
+            padding: 16,
+            backgroundColor: '#f8fff9',
+            border: '2px solid #28a745',
+            borderRadius: 8,
+          }}
+        >
           <h4 style={{ color: '#28a745', marginTop: 0 }}>
             🎉 생성된 임베딩 ({Object.keys(embeddings).length}개)
           </h4>
-          <div style={{
-            maxHeight: 300,
-            overflowY: 'auto',
-            fontSize: 14
-          }}>
+          <div
+            style={{
+              maxHeight: 300,
+              overflowY: 'auto',
+              fontSize: 14,
+            }}
+          >
             {Object.entries(embeddings).map(([name, embedding]) => (
               <div key={name} style={{ marginBottom: 8 }}>
                 <strong>{name}:</strong> {embedding.length}차원 벡터
                 <span style={{ color: '#6c757d', marginLeft: 8 }}>
-                  (예: {embedding.slice(0, 3).map(v => v.toFixed(3)).join(', ')}...)
+                  (예:{' '}
+                  {embedding
+                    .slice(0, 3)
+                    .map((v) => v.toFixed(3))
+                    .join(', ')}
+                  ...)
                 </span>
               </div>
             ))}
@@ -329,6 +358,6 @@ const ConvertJsonComponent = ({ session, debugInfo, setDebugInfo }) => {
       <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
-}
+};
 
 export default ConvertJsonComponent;

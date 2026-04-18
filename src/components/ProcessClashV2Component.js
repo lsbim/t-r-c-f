@@ -6,451 +6,503 @@ import { loadImage, parseClashV2Info } from '../utils/function';
 import { sliceClashV2Cells } from '../utils/sliceCells';
 import { loadTemplates, matchDigit, templateImages } from '../utils/template';
 
-
 const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
-    const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [results, setResults] = useState([]);   // 이제 각 요소가 { grade, score, duration, timeBonus, arr } 형태
-    const [storedEmbs, setStoredEmbs] = useState([]);  // { name: string, emb: Float32Array }[]
-    const canvasRef = useRef(document.createElement('canvas'));
-    const [fileList, setFileList] = useState([]); // { file: File, previewUrl: string }[]
-    const [resultDebug, setResultDebug] = useState({});
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [results, setResults] = useState([]); // 이제 각 요소가 { grade, score, duration, timeBonus, arr } 형태
+  const [storedEmbs, setStoredEmbs] = useState([]); // { name: string, emb: Float32Array }[]
+  const canvasRef = useRef(document.createElement('canvas'));
+  const [fileList, setFileList] = useState([]); // { file: File, previewUrl: string }[]
+  const [resultDebug, setResultDebug] = useState({});
 
-    // Blob URL 정리를 위한 useEffect
-    useEffect(() => {
-        return () => {
-            fileList.forEach(item => {
-                if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-            });
-        };
-    }, [fileList]);
+  // Blob URL 정리를 위한 useEffect
+  useEffect(() => {
+    return () => {
+      fileList.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [fileList]);
 
-    useEffect(() => {
-        fetch('/data/embeddings.json')
-            .then(res => {
-                if (!res.ok) throw new Error('embeddings.json 로드 실패');
-                return res.json();
-            })
-            .then(data => {
-                // 임베딩 데이터를 Float32Array로 변환하여 저장
-                const list = Object.entries(data).map(([name, obj]) => {
-                    const arr = Object.keys(obj)
-                        .sort((a, b) => Number(a) - Number(b))
-                        .map(k => Number(obj[k]));
-                    return {
-                        name,
-                        emb: Float32Array.from(arr)
-                    };
-                });
-                setStoredEmbs(list);
-                console.log('loaded', list.length, 'embeddings, each dim=', list[0].emb.length);
-            })
-            .catch(console.error);
-    }, []);
+  useEffect(() => {
+    fetch('/data/embeddings.json')
+      .then((res) => {
+        if (!res.ok) throw new Error('embeddings.json 로드 실패');
+        return res.json();
+      })
+      .then((data) => {
+        // 임베딩 데이터를 Float32Array로 변환하여 저장
+        const list = Object.entries(data).map(([name, obj]) => {
+          const arr = Object.keys(obj)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((k) => Number(obj[k]));
+          return {
+            name,
+            emb: Float32Array.from(arr),
+          };
+        });
+        setStoredEmbs(list);
+        console.log('loaded', list.length, 'embeddings, each dim=', list[0].emb.length);
+      })
+      .catch(console.error);
+  }, []);
 
-    // OCR 수행 함수 - InfoComponent에서 가져온 로직
-    async function performOCR(img, idx) {
-        console.time(`OCR ${idx}`);
+  // OCR 수행 함수 - InfoComponent에서 가져온 로직
+  async function performOCR(img, idx) {
+    console.time(`OCR ${idx}`);
 
-        const regions = [
-            { name: 'region1', x: 17, y: 3, w: 105, h: 27 }, // 2.0 전용 단계
-            { name: 'region2', x: 58, y: 230, w: 145, h: 14 }, // 2.0 전용 점수
-            { name: 'region3', x: 101, y: 258, w: 53, h: 18 }, // 2.0 전용 플레이 시간
-            { name: 'region4', x: 86, y: 289, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
-            { name: 'region5', x: 305, y: 392, w: 7, h: 11, type: 'small_number' }, // 2.0 전용 이면의파편 레벨
-            { name: 'region6', x: 374, y: 392, w: 7, h: 11, type: 'small_number' },
-            { name: 'region7', x: 443, y: 392, w: 7, h: 11, type: 'small_number' },
-        ];
+    const regions = [
+      { name: 'region1', x: 17, y: 3, w: 105, h: 27 }, // 2.0 전용 단계
+      { name: 'region2', x: 58, y: 230, w: 145, h: 14 }, // 2.0 전용 점수
+      { name: 'region3', x: 101, y: 258, w: 53, h: 18 }, // 2.0 전용 플레이 시간
+      { name: 'region4', x: 86, y: 289, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
+      { name: 'region5', x: 305, y: 392, w: 7, h: 11, type: 'small_number' }, // 2.0 전용 이면의파편 레벨
+      { name: 'region6', x: 374, y: 392, w: 7, h: 11, type: 'small_number' },
+      { name: 'region7', x: 443, y: 392, w: 7, h: 11, type: 'small_number' },
+    ];
 
-        if (templateImages.length === 0) await loadTemplates();
+    if (templateImages.length === 0) await loadTemplates();
 
-        const ocr = {};
+    const ocr = {};
 
-        for (const { name, x, y, w, h, type } of regions) {
-            let off = document.createElement('canvas');
-            off.width = w;
-            off.height = h;
-            off.getContext('2d', { willReadFrequently: true }).drawImage(img, x, y, w, h, 0, 0, w, h);
+    for (const { name, x, y, w, h, type } of regions) {
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      off.getContext('2d', { willReadFrequently: true }).drawImage(img, x, y, w, h, 0, 0, w, h);
 
-            if (type === 'small_number') {
-                ocr[name] = matchDigit(off);
-                continue;
-            } else {
-                const opts = name === 'region1' | 'region4' ? {
-                    tessedit_ocr_engine_mode: 1,
-                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-                    tessedit_char_whitelist: '0123456789단계'
-                } : {
-                    tessedit_ocr_engine_mode: 1,
-                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
-                    tessedit_char_whitelist: '0123456789:,'
-                };
+      if (type === 'small_number') {
+        ocr[name] = matchDigit(off);
+      } else {
+        const opts =
+          (name === 'region1') | 'region4'
+            ? {
+                tessedit_ocr_engine_mode: 1,
+                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                tessedit_char_whitelist: '0123456789단계',
+              }
+            : {
+                tessedit_ocr_engine_mode: 1,
+                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                tessedit_char_whitelist: '0123456789:,',
+              };
 
-                const { data: { text } } = await Tesseract.recognize(off, 'kor+eng', opts);
+        const {
+          data: { text },
+        } = await Tesseract.recognize(off, 'kor+eng', opts);
 
-                ocr[name] = text.trim();
-            }
-
-        }
-
-        for (const [key, value] of Object.entries(ocr)) {
-            console.log(`ocr: ${key}: ${value}`);
-        }
-
-        console.log('→ OCR 완료:', ocr);
-        console.timeEnd(`OCR ${idx}`);
-
-        return parseClashV2Info(ocr);
+        ocr[name] = text.trim();
+      }
     }
 
-    const handleFiles = async e => {
-        if (!session) return;
-        const files = Array.from(e.target.files);
+    for (const [key, value] of Object.entries(ocr)) {
+      console.log(`ocr: ${key}: ${value}`);
+    }
 
-        // 이전 URL들 정리
-        fileList.forEach(item => {
-            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    console.log('→ OCR 완료:', ocr);
+    console.timeEnd(`OCR ${idx}`);
+
+    return parseClashV2Info(ocr);
+  }
+
+  const handleFiles = async (e) => {
+    if (!session) return;
+    const files = Array.from(e.target.files);
+
+    // 이전 URL들 정리
+    fileList.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+
+    const newFileList = files.map((file) => ({
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setResults([]);
+    setFileList(newFileList);
+    setProgress({ current: 0, total: files.length });
+
+    for (let idx = 0; idx < newFileList.length; idx++) {
+      const { file, previewUrl } = newFileList[idx];
+      console.log(`🔄 [${idx + 1}/${files.length}] ${file.name}.png 처리 시작`);
+
+      try {
+        // 1) 셀 분할
+        console.time(`slice ${idx}`);
+        setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
+        const img = await loadImage(previewUrl);
+        const canvas = canvasRef.current;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const rects = sliceClashV2Cells('embed');
+        const cells = rects.map((rect, i) => {
+          const off = document.createElement('canvas');
+          off.width = rect.w;
+          off.height = rect.h;
+          const offCtx = off.getContext('2d', { willReadFrequently: true });
+          offCtx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+          return { ...rect, index: i, url: off.toDataURL() };
         });
+        console.log(`→ 셀 분할 완료 (${cells.length}개)`);
+        console.timeEnd(`slice ${idx}`);
 
-        const newFileList = files.map(file => ({
-            file,
-            previewUrl: URL.createObjectURL(file)
-        }));
+        // 2) 배치 임베딩
+        console.time(`Embed ${idx}`);
+        setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
+        const urls = cells.map((c) => c.url);
+        const embs = await batchEmbed(urls, canvasRef, ort, session);
+        cells.forEach((c, i) => (c.emb = embs[i]));
+        console.log('→ 배치 임베딩 완료');
+        console.timeEnd(`Embed ${idx}`);
 
-        setResults([]);
-        setFileList(newFileList);
-        setProgress({ current: 0, total: files.length });
+        // 3) 게임 정보 추출 + 매칭 & 예측 이름 추출
+        setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
 
-        for (let idx = 0; idx < newFileList.length; idx++) {
-            const { file, previewUrl } = newFileList[idx];
-            console.log(`🔄 [${idx + 1}/${files.length}] ${file.name}.png 처리 시작`);
+        const [gameInfo, names] = await Promise.all([
+          performOCR(img, idx),
+          matchNames(embs, cells, storedEmbs, idx),
+        ]);
 
-            try {
+        const arr = names
+          .slice(0, 9)
+          .filter(Boolean)
+          .map((n) => n.charName); // 셰이디의 차원
+        const sideArr = names
+          .slice(9, 18)
+          .filter(Boolean)
+          .map((n) => n.charName); // 림의 이면세계
 
-                // 1) 셀 분할
-                console.time(`slice ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
-                const img = await loadImage(previewUrl);
-                const canvas = canvasRef.current;
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                ctx.drawImage(img, 0, 0);
-                const rects = sliceClashV2Cells('embed');
-                const cells = rects.map((rect, i) => {
-                    const off = document.createElement('canvas');
-                    off.width = rect.w;
-                    off.height = rect.h;
-                    const offCtx = off.getContext('2d', { willReadFrequently: true });
-                    offCtx.drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
-                    return { ...rect, index: i, url: off.toDataURL() };
-                });
-                console.log(`→ 셀 분할 완료 (${cells.length}개)`);
-                console.timeEnd(`slice ${idx}`);
+        const skinArr = names
+          .slice(0, 9)
+          .filter(Boolean)
+          .map((n) => n.skinName);
+        const sideSkinArr = names
+          .slice(9, 18)
+          .filter(Boolean)
+          .map((n) => n.skinName);
 
-                // 2) 배치 임베딩
-                console.time(`Embed ${idx}`);
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 임베딩 중...`);
-                const urls = cells.map(c => c.url);
-                const embs = await batchEmbed(urls, canvasRef, ort, session);
-                cells.forEach((c, i) => c.emb = embs[i]);
-                console.log('→ 배치 임베딩 완료');
-                console.timeEnd(`Embed ${idx}`);
+        // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
+        const rank = idx + 1;
 
-
-                // 3) 게임 정보 추출 + 매칭 & 예측 이름 추출
-                setDebugInfo(`파일 ${idx + 1}/${files.length} 매칭 중...`);
-
-                const [gameInfo, names] = await Promise.all([
-                    performOCR(img, idx),
-                    matchNames(embs, cells, storedEmbs, idx)
-                ]);
-
-                const arr = names.slice(0, 9).filter(Boolean).map(n => n.charName); // 셰이디의 차원
-                const sideArr = names.slice(9, 18).filter(Boolean).map(n => n.charName); // 림의 이면세계
-
-                const skinArr = names.slice(0, 9).filter(Boolean).map(n => n.skinName);
-                const sideSkinArr = names.slice(9, 18).filter(Boolean).map(n => n.skinName);
-
-
-
-                // 5) 최종 결과 객체 생성 - 게임 정보와 캐릭터 배열을 합침
-                const rank = idx + 1;
-
-                const sideSkillNames = names.slice(18, 21);
-                const sideSkills = sideSkillNames
-                    .map((item, index) => {
-                        if (item !== null && gameInfo.sideSkills[index] > 0) {
-                            return {
-                                name: item.charName,
-                                level: gameInfo.sideSkills[index],
-                            };
-                        }
-                        return null;
-                    })
-                    .filter(skill => skill !== null);
-
-                const resultObject = {
-                    rank,
-                    grade: gameInfo.grade,
-                    score: gameInfo.score,
-                    duration: gameInfo.duration,
-                    sideGrade: gameInfo.sideGrade,
-                    arr: arr,
-                    sideArr: sideArr,
-                    skinArr: skinArr,
-                    sideSkinArr: sideSkinArr,
-                    sideSkills: sideSkills
-                };
-
-
-                if (results.length > 0 && resultObject.rank !== null) {
-                    // 바로 이전 결과와만 비교
-                    const prevResult = results[resultObject?.rank - 1];
-                    if (prevResult?.rank !== null && prevResult?.score < resultObject?.score && prevResult?.rank < resultObject?.rank) {
-                        const debugKey = prevResult?.rank;
-                        const debugMessage = `${prevResult?.rank}위 점수: ${prevResult?.score} < ${resultObject?.rank}위 점수: ${resultObject?.score}`;
-
-                        setResultDebug(prev => ({
-                            ...prev,
-                            [debugKey]: debugMessage
-                        }));
-
-                        console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                    }
-                }
-                if (resultObject.score === null || resultObject.grade === null || resultObject?.grade?.length < 4) {
-                    const debugMessage = `${resultObject.rank}위 null 발생: score: ${resultObject.score}, grade: ${resultObject.grade}`;
-                    setResultDebug(prev => ({
-                        ...prev,
-                        [resultObject.rank]: debugMessage
-                    }));
-                    console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                }
-                // if (resultObject.duration < 120) {
-                //     const debugMessage = `${resultObject.rank}위 플레이 타임: ${resultObject.duration}`
-                //     setResultDebug(prev => ({
-                //         ...prev,
-                //         [resultObject.rank]: debugMessage
-                //     }));
-                //     console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                // }
-                if (resultObject.coin < 1000) {
-                    const debugMessage = `${resultObject.rank}위 코인: ${resultObject.coin}`
-                    setResultDebug(prev => ({
-                        ...prev,
-                        [resultObject.rank]: debugMessage
-                    }));
-                    console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                }
-
-                // 6) 결과 누적 & 진행도 업데이트
-                setResults(prev => [...prev, resultObject]);
-                setProgress(p => ({ current: p.current + 1, total: p.total }));
-
-            } catch (error) {
-                console.error(`파일 ${idx + 1} 처리 중 오류:`, error);
-                // 오류 발생 시에도 기본 객체 추가
-                setResults(prev => [...prev, {
-                    grade: 0,
-                    score: 0,
-                    duration: 0,
-                    arr: [],
-                    skinArr: [],
-                    sideArr: [],
-                    sideSkinArr: [],
-                    sideSkills: []
-                }]);
-                setProgress(p => ({ current: p.current + 1, total: p.total }));
-            } finally {
-                // 더 이상 개별적으로 revoke하지 않음 (상태에서 관리)
+        const sideSkillNames = names.slice(18, 21);
+        const sideSkills = sideSkillNames
+          .map((item, index) => {
+            if (item !== null && gameInfo.sideSkills[index] > 0) {
+              return {
+                name: item.charName,
+                level: gameInfo.sideSkills[index],
+              };
             }
-        } // 파일 수만큼 반복 완료
+            return null;
+          })
+          .filter((skill) => skill !== null);
 
-        if (Object.keys(resultDebug).length === 0) {
-            console.log("✅ 특이사항이 없습니다. ", resultDebug)
-        } else {
-            console.log("❗ 특이사항 발생: ", resultDebug)
+        const resultObject = {
+          rank,
+          grade: gameInfo.grade,
+          score: gameInfo.score,
+          duration: gameInfo.duration,
+          sideGrade: gameInfo.sideGrade,
+          arr: arr,
+          sideArr: sideArr,
+          skinArr: skinArr,
+          sideSkinArr: sideSkinArr,
+          sideSkills: sideSkills,
+        };
+
+        if (results.length > 0 && resultObject.rank !== null) {
+          // 바로 이전 결과와만 비교
+          const prevResult = results[resultObject?.rank - 1];
+          if (
+            prevResult?.rank !== null &&
+            prevResult?.score < resultObject?.score &&
+            prevResult?.rank < resultObject?.rank
+          ) {
+            const debugKey = prevResult?.rank;
+            const debugMessage = `${prevResult?.rank}위 점수: ${prevResult?.score} < ${resultObject?.rank}위 점수: ${resultObject?.score}`;
+
+            setResultDebug((prev) => ({
+              ...prev,
+              [debugKey]: debugMessage,
+            }));
+
+            console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
+          }
+        }
+        if (
+          resultObject.score === null ||
+          resultObject.grade === null ||
+          resultObject?.grade?.length < 4
+        ) {
+          const debugMessage = `${resultObject.rank}위 null 발생: score: ${resultObject.score}, grade: ${resultObject.grade}`;
+          setResultDebug((prev) => ({
+            ...prev,
+            [resultObject.rank]: debugMessage,
+          }));
+          console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
+        }
+        // if (resultObject.duration < 120) {
+        //     const debugMessage = `${resultObject.rank}위 플레이 타임: ${resultObject.duration}`
+        //     setResultDebug(prev => ({
+        //         ...prev,
+        //         [resultObject.rank]: debugMessage
+        //     }));
+        //     console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
+        // }
+        if (resultObject.coin < 1000) {
+          const debugMessage = `${resultObject.rank}위 코인: ${resultObject.coin}`;
+          setResultDebug((prev) => ({
+            ...prev,
+            [resultObject.rank]: debugMessage,
+          }));
+          console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
         }
 
-        setDebugInfo('모든 파일 처리 완료!');
-    };
+        // 6) 결과 누적 & 진행도 업데이트
+        setResults((prev) => [...prev, resultObject]);
+        setProgress((p) => ({ current: p.current + 1, total: p.total }));
+      } catch (error) {
+        console.error(`파일 ${idx + 1} 처리 중 오류:`, error);
+        // 오류 발생 시에도 기본 객체 추가
+        setResults((prev) => [
+          ...prev,
+          {
+            grade: 0,
+            score: 0,
+            duration: 0,
+            arr: [],
+            skinArr: [],
+            sideArr: [],
+            sideSkinArr: [],
+            sideSkills: [],
+          },
+        ]);
+        setProgress((p) => ({ current: p.current + 1, total: p.total }));
+      } finally {
+        // 더 이상 개별적으로 revoke하지 않음 (상태에서 관리)
+      }
+    } // 파일 수만큼 반복 완료
 
-    return (
-        <div className="p-6 max-w-4xl mx-auto bg-white min-h-screen">
-            <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-800 mb-2 bg-gradient-to-r from-sky-400">🔍 차원 대충돌 2.0 이미지 분석 도구</h2>
-                <p className="text-gray-600">OCR + 캐릭터 매칭을 통한 게임 스크린샷 분석</p>
+    if (Object.keys(resultDebug).length === 0) {
+      console.log('✅ 특이사항이 없습니다. ', resultDebug);
+    } else {
+      console.log('❗ 특이사항 발생: ', resultDebug);
+    }
+
+    setDebugInfo('모든 파일 처리 완료!');
+  };
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto bg-white min-h-screen">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-bold text-gray-800 mb-2 bg-gradient-to-r from-sky-400">
+          🔍 차원 대충돌 2.0 이미지 분석 도구
+        </h2>
+        <p className="text-gray-600">OCR + 캐릭터 매칭을 통한 게임 스크린샷 분석</p>
+      </div>
+
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <span className="text-sm font-medium text-gray-700 mr-2">진행:</span>
+              <span className="text-lg font-bold text-blue-600">
+                {progress.current}/{progress.total}
+              </span>
             </div>
-
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
-                <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-4">
-                        <div className="flex items-center">
-                            <span className="text-sm font-medium text-gray-700 mr-2">진행:</span>
-                            <span className="text-lg font-bold text-blue-600">{progress.current}/{progress.total}</span>
-                        </div>
-                        <div className="w-px h-6 bg-gray-300"></div>
-                        <div className="flex items-center">
-                            <span className="text-sm font-medium text-gray-700 mr-2">상태:</span>
-                            <span className="text-sm text-green-600 font-medium">{debugInfo}</span>
-                        </div>
-                    </div>
-                    {progress.total > 0 && (
-                        <div className="w-32 bg-gray-200 rounded-full h-2">
-                            <div
-                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                            ></div>
-                        </div>
-                    )}
-                </div>
+            <div className="w-px h-6 bg-gray-300"></div>
+            <div className="flex items-center">
+              <span className="text-sm font-medium text-gray-700 mr-2">상태:</span>
+              <span className="text-sm text-green-600 font-medium">{debugInfo}</span>
             </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
-                <label className="block text-lg font-semibold text-gray-800 mb-3">
-                    🎨 분석할 게임 스크린샷
-                </label>
-                <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleFiles}
-                    disabled={!session}
-                    className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
-                <p className="text-sm text-gray-500 mt-2">
-                    각 이미지에서 게임 정보(점수, 등급 등)를 OCR로 추출하고, 캐릭터 그리드를 분석하여 매칭합니다.
-                </p>
+          </div>
+          {progress.total > 0 && (
+            <div className="w-32 bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(progress.current / progress.total) * 100}%` }}
+              ></div>
             </div>
-
-            {/* 개별 결과 확인 */}
-            <div className="mb-8">
-                <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-                    📊 개별 분석 결과
-                    <span className="ml-3 text-sm font-normal text-gray-500">({results.length}개 완료)</span>
-                </h3>
-
-                <div className="grid gap-4">
-                    {fileList
-                        .filter(item => !item.file.name.includes('_score'))
-                        .sort((a, b) => {
-                            const numA = parseInt(a.file.name, 10);
-                            const numB = parseInt(b.file.name, 10);
-                            return numA - numB;
-                        })
-                        .map((item, i) => (
-                            <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                                <div className="flex justify-between items-center mb-3">
-                                    <h4 className="font-semibold text-gray-800 truncate mr-4">
-                                        파일 {i + 1}: {item.file.name}
-                                    </h4>
-                                    {results[i] && (
-                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            ✅ 분석 완료
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="flex flex-col gap-4">
-                                    <div>
-                                        <img
-                                            src={item.previewUrl}
-                                            alt={item.file.name}
-                                            className="w-full object-cover rounded-lg border border-gray-200"
-                                        />
-                                        {results[i] && (
-                                            <div className='flex'>
-                                                <div className="w-[330px] bg-gray-50 rounded-lg p-4">
-                                                    <div className="flex-col flex  items-center justify-center w-[300px]">
-                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">단계</div>
-                                                            <div className="text-lg font-bold text-blue-600">{results[i].grade}</div>
-                                                        </div>
-                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">점수</div>
-                                                            <div className="text-lg font-bold text-green-600">{results[i].score?.toLocaleString()}</div>
-                                                        </div>
-                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">시간</div>
-                                                            <div className="text-lg font-bold text-purple-600">{results[i].duration}초</div>
-                                                        </div>
-                                                        <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">이면세계</div>
-                                                            <div className="text-lg font-bold text-orange-600">{results[i].sideGrade}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
-                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사도 배열</div>
-                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                        {results[i].arr.join(', ')}
-                                                    </div>
-                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                        {results[i].sideArr.join(', ')}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사복 배열</div>
-                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                        {results[i].skinArr.join(', ')}
-                                                    </div>
-                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                        {results[i].sideSkinArr.join(', ')}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">이면의 파편</div>
-                                                    <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto pr-24">
-                                                        {results[i].sideSkills.length > 0
-                                                            ? results[i].sideSkills.map(skill => (
-                                                                <div key={i + skill.name}>
-                                                                    {skill.name} (Lv.{skill.level})
-                                                                </div>
-                                                            ))
-                                                            : '스킬 없음'}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                </div>
-                            </div>
-                        ))}
-                </div>
-            </div>
-
-            {/* 최종 복사용 결과 */}
-            <div className="mb-8">
-                <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-                    📋 최종 결과 배열 (복사용)
-                    <span className="ml-3 text-sm font-normal text-gray-500">다른 사이트에서 활용</span>
-                </h3>
-
-                <div className="bg-gray-50 rounded-xl border border-gray-200 relative overflow-hidden">
-                    <div className="flex justify-between items-center p-4 bg-gradient-to-r from-gray-100 to-gray-50 border-b border-gray-200">
-                        <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-700">JSON 형식</span>
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
-                                {results.length}개 객체
-                            </span>
-                        </div>
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(results, null, 2));
-                                // 복사 완료 피드백을 위한 간단한 알림 (선택사항)
-                            }}
-                            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                            <span>📋</span>
-                            <span>복사</span>
-                        </button>
-                    </div>
-                    <pre className="p-4 text-xs font-mono text-gray-700 max-h-80 overflow-auto leading-relaxed">
-                        {JSON.stringify(results.sort((a, b) => a.rank - b.rank), null, 2)}
-                    </pre>
-                </div>
-            </div>
-
-            <canvas ref={canvasRef} className="hidden" />
+          )}
         </div>
-    );
-}
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6 shadow-sm">
+        <label className="block text-lg font-semibold text-gray-800 mb-3">
+          🎨 분석할 게임 스크린샷
+        </label>
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={handleFiles}
+          disabled={!session}
+          className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+        />
+        <p className="text-sm text-gray-500 mt-2">
+          각 이미지에서 게임 정보(점수, 등급 등)를 OCR로 추출하고, 캐릭터 그리드를 분석하여
+          매칭합니다.
+        </p>
+      </div>
+
+      {/* 개별 결과 확인 */}
+      <div className="mb-8">
+        <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+          📊 개별 분석 결과
+          <span className="ml-3 text-sm font-normal text-gray-500">({results.length}개 완료)</span>
+        </h3>
+
+        <div className="grid gap-4">
+          {fileList
+            .filter((item) => !item.file.name.includes('_score'))
+            .sort((a, b) => {
+              const numA = parseInt(a.file.name, 10);
+              const numB = parseInt(b.file.name, 10);
+              return numA - numB;
+            })
+            .map((item, i) => (
+              <div
+                key={i}
+                className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-semibold text-gray-800 truncate mr-4">
+                    파일 {i + 1}: {item.file.name}
+                  </h4>
+                  {results[i] && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      ✅ 분석 완료
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <img
+                      src={item.previewUrl}
+                      alt={item.file.name}
+                      className="w-full object-cover rounded-lg border border-gray-200"
+                    />
+                    {results[i] && (
+                      <div className="flex">
+                        <div className="w-[330px] bg-gray-50 rounded-lg p-4">
+                          <div className="flex-col flex  items-center justify-center w-[300px]">
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                              <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                단계
+                              </div>
+                              <div className="text-lg font-bold text-blue-600">
+                                {results[i].grade}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                              <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                점수
+                              </div>
+                              <div className="text-lg font-bold text-green-600">
+                                {results[i].score?.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                              <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                시간
+                              </div>
+                              <div className="text-lg font-bold text-purple-600">
+                                {results[i].duration}초
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                              <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                이면세계
+                              </div>
+                              <div className="text-lg font-bold text-orange-600">
+                                {results[i].sideGrade}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
+                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">
+                            사도 배열
+                          </div>
+                          <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                            {results[i].arr.join(', ')}
+                          </div>
+                          <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                            {results[i].sideArr.join(', ')}
+                          </div>
+                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">
+                            사복 배열
+                          </div>
+                          <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                            {results[i].skinArr.join(', ')}
+                          </div>
+                          <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                            {results[i].sideSkinArr.join(', ')}
+                          </div>
+                          <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">
+                            이면의 파편
+                          </div>
+                          <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto pr-24">
+                            {results[i].sideSkills.length > 0
+                              ? results[i].sideSkills.map((skill) => (
+                                  <div key={i + skill.name}>
+                                    {skill.name} (Lv.{skill.level})
+                                  </div>
+                                ))
+                              : '스킬 없음'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* 최종 복사용 결과 */}
+      <div className="mb-8">
+        <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+          📋 최종 결과 배열 (복사용)
+          <span className="ml-3 text-sm font-normal text-gray-500">다른 사이트에서 활용</span>
+        </h3>
+
+        <div className="bg-gray-50 rounded-xl border border-gray-200 relative overflow-hidden">
+          <div className="flex justify-between items-center p-4 bg-gradient-to-r from-gray-100 to-gray-50 border-b border-gray-200">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium text-gray-700">JSON 형식</span>
+              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                {results.length}개 객체
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(JSON.stringify(results, null, 2));
+                // 복사 완료 피드백을 위한 간단한 알림 (선택사항)
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <span>📋</span>
+              <span>복사</span>
+            </button>
+          </div>
+          <pre className="p-4 text-xs font-mono text-gray-700 max-h-80 overflow-auto leading-relaxed">
+            {JSON.stringify(
+              results.sort((a, b) => a.rank - b.rank),
+              null,
+              2,
+            )}
+          </pre>
+        </div>
+      </div>
+
+      <canvas ref={canvasRef} className="hidden" />
+    </div>
+  );
+};
 
 export default ProcessClashV2Component;

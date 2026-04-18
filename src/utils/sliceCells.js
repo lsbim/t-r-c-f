@@ -12,8 +12,8 @@ export function sliceClashCells() {
   const firstRow = [
     { x: 350, y: 23 }, // 옆칸과 X축 73차이
     { x: 423, y: 23 }, // 73
-    { x: 496, y: 23 }, // 
-    { x: 569, y: 23 }, // 
+    { x: 496, y: 23 }, //
+    { x: 569, y: 23 }, //
     { x: 643, y: 23 },
   ];
 
@@ -30,19 +30,19 @@ export function sliceClashCells() {
   // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
   const rects = [
     ...firstRow.map((pos, idx) => ({
-      index: idx + 1,        // 1-based 인덱스 (필요에 따라 0-based로 조정)
+      index: idx + 1, // 1-based 인덱스 (필요에 따라 0-based로 조정)
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
-      h: CELL_HEIGHT
+      h: CELL_HEIGHT,
     })),
     ...secondRow.map((pos, idx) => ({
-      index: idx + 6,        // 두 번째 행은 6번부터
+      index: idx + 6, // 두 번째 행은 6번부터
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    }))
+      h: CELL_HEIGHT,
+    })),
   ];
 
   return rects;
@@ -76,19 +76,19 @@ export function sliceFrontierCells() {
   // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
   const rects = [
     ...firstRow.map((pos, idx) => ({
-      index: idx + 1,        // 1-based 인덱스 (필요에 따라 0-based로 조정)
+      index: idx + 1, // 1-based 인덱스 (필요에 따라 0-based로 조정)
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
-      h: CELL_HEIGHT
+      h: CELL_HEIGHT,
     })),
     ...secondRow.map((pos, idx) => ({
-      index: idx + 7,        // 두 번째 행은 6번부터
+      index: idx + 7, // 두 번째 행은 6번부터
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    }))
+      h: CELL_HEIGHT,
+    })),
   ];
 
   return rects;
@@ -138,44 +138,47 @@ export function sliceClashV2Cells(type) {
   ];
 
   // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
-  const rects = type === 'slice' ? [
-    ...firstRow.map((pos, idx) => ({
-      index: idx,
-      x: pos.x,
-      y: pos.y,
-      w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    })),
-    ...secondRow.map((pos, idx) => ({
-      index: idx + 9,
-      x: pos.x,
-      y: pos.y,
-      w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    }))
-  ] : [
-    ...firstRow.map((pos, idx) => ({
-      index: idx,
-      x: pos.x,
-      y: pos.y,
-      w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    })),
-    ...secondRow.map((pos, idx) => ({
-      index: idx + 9,
-      x: pos.x,
-      y: pos.y,
-      w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    })),
-    ...thirdRow.map((pos, idx) => ({
-      index: idx + 18,
-      x: pos.x,
-      y: pos.y,
-      w: SKILL_CELL_WIDTH,
-      h: SKILL_CELL_HEIGHT
-    }))
-  ];
+  const rects =
+    type === 'slice'
+      ? [
+          ...firstRow.map((pos, idx) => ({
+            index: idx,
+            x: pos.x,
+            y: pos.y,
+            w: CELL_WIDTH,
+            h: CELL_HEIGHT,
+          })),
+          ...secondRow.map((pos, idx) => ({
+            index: idx + 9,
+            x: pos.x,
+            y: pos.y,
+            w: CELL_WIDTH,
+            h: CELL_HEIGHT,
+          })),
+        ]
+      : [
+          ...firstRow.map((pos, idx) => ({
+            index: idx,
+            x: pos.x,
+            y: pos.y,
+            w: CELL_WIDTH,
+            h: CELL_HEIGHT,
+          })),
+          ...secondRow.map((pos, idx) => ({
+            index: idx + 9,
+            x: pos.x,
+            y: pos.y,
+            w: CELL_WIDTH,
+            h: CELL_HEIGHT,
+          })),
+          ...thirdRow.map((pos, idx) => ({
+            index: idx + 18,
+            x: pos.x,
+            y: pos.y,
+            w: SKILL_CELL_WIDTH,
+            h: SKILL_CELL_HEIGHT,
+          })),
+        ];
 
   return rects;
 }
@@ -197,8 +200,8 @@ export function sliceClashV2SideSkills() {
       x: pos.x,
       y: pos.y,
       w: CELL_WIDTH,
-      h: CELL_HEIGHT
-    }))
+      h: CELL_HEIGHT,
+    })),
   ];
 
   return rects;
