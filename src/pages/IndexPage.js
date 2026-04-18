@@ -14,6 +14,7 @@ const IndexPage = () => {
 
     // 1) ONNX Runtime 세션 초기화
     useEffect(() => {
+        let currentSession = null;
         const loadModel = async () => { // 이 비동기 함수를 정의
             try {
                 console.log('ONNX Runtime 초기화 시작...');
@@ -22,12 +23,12 @@ const IndexPage = () => {
                 // setTimeout 안에 await를 직접 넣는 것보다, setTimeout 없이 바로 실행하거나
                 // setTimeout의 콜백 자체를 async로 만드는 것이 좋습니다.
                 // 여기서는 setTimeout을 제거하고 바로 로드합니다.
-                const s = await ort.InferenceSession.create('/models/vision_model.onnx',
+                currentSession = await ort.InferenceSession.create('/models/vision_model.onnx',
                     {
                         executionProviders: ['webgpu', 'wasm'] // GPU 우선, 안되면 WASM
                     }
                 );
-                setSession(s);
+                setSession(currentSession);
                 setDebugInfo('✅ 모델 준비됨');
                 console.log('ONNX Runtime 초기화 완료.');
             } catch (error) {
@@ -37,6 +38,13 @@ const IndexPage = () => {
         };
 
         loadModel(); // 정의한 비동기 함수 즉시 호출
+
+        return () => {
+            if (currentSession) {
+                console.log('ONNX Runtime 세션 해제 중...');
+                currentSession.release();
+            }
+        };
     }, []); // 빈 배열은 컴포넌트 마운트 시 한 번만 실행
 
 

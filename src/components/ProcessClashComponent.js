@@ -11,8 +11,17 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     const [results, setResults] = useState([]);   // 이제 각 요소가 { grade, score, duration, timeBonus, arr } 형태
     const [storedEmbs, setStoredEmbs] = useState([]);  // { name: string, emb: Float32Array }[]
     const canvasRef = useRef(document.createElement('canvas'));
-    const [fileList, setFileList] = useState([]);
+    const [fileList, setFileList] = useState([]); // { file: File, previewUrl: string }[]
     const [resultDebug, setResultDebug] = useState({});
+
+    // Blob URL 정리를 위한 useEffect
+    useEffect(() => {
+        return () => {
+            fileList.forEach(item => {
+                if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+            });
+        };
+    }, [fileList]);
 
     useEffect(() => {
         fetch('/data/embeddings.json')
@@ -94,21 +103,30 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     const handleFiles = async e => {
         if (!session) return;
         const files = Array.from(e.target.files);
+
+        // 이전 URL들 정리
+        fileList.forEach(item => {
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        });
+
+        const newFileList = files.map(file => ({
+            file,
+            previewUrl: URL.createObjectURL(file)
+        }));
+
         setResults([]);
-        setFileList(files);
+        setFileList(newFileList);
         setProgress({ current: 0, total: files.length });
 
-        for (let idx = 0; idx < files.length; idx++) {
-            const file = files[idx];
+        for (let idx = 0; idx < newFileList.length; idx++) {
+            const { file, previewUrl } = newFileList[idx];
             console.log(`🔄 [${idx + 1}/${files.length}] ${file.name} 처리 시작`);
-
-            const url = URL.createObjectURL(file);
 
             try {
                 // 1) 셀 분할
                 console.time(`slice ${idx}`);
                 setDebugInfo(`파일 ${idx + 1}/${files.length} 분할 중...`);
-                const img = await loadImage(url);
+                const img = await loadImage(previewUrl);
                 const canvas = canvasRef.current;
                 canvas.width = img.width;
                 canvas.height = img.height;
@@ -220,7 +238,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 }]);
                 setProgress(p => ({ current: p.current + 1, total: p.total }));
             } finally {
-                URL.revokeObjectURL(url);
+                // 더 이상 개별적으로 revoke하지 않음 (상태에서 관리)
             }
         } // 파일 수만큼 반복 완료
 
@@ -289,11 +307,11 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 </h3>
 
                 <div className="grid gap-4">
-                    {fileList.map((file, i) => (
+                    {fileList.map((item, i) => (
                         <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
                             <div className="flex justify-between items-center mb-3">
                                 <h4 className="font-semibold text-gray-800 truncate mr-4">
-                                    파일 {i + 1}: {file.name}
+                                    파일 {i + 1}: {item.file.name}
                                 </h4>
                                 {results[i] && (
                                     <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -305,8 +323,8 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                             <div className="flex flex-col gap-4">
                                 <div>
                                     <img
-                                        src={URL.createObjectURL(file)}
-                                        alt={file.name}
+                                        src={item.previewUrl}
+                                        alt={item.file.name}
                                         className="w-full object-cover rounded-lg border border-gray-200"
                                     />
                                     {results[i] && (
