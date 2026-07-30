@@ -217,7 +217,7 @@ export function parseClashV2Info({ region1, region2, region3, region4, region5, 
         }
     }
     {
-        const m = region4.match(/(\d+)\s*단계/);
+        const m = region4.match(/(\d+)\s*단\s*계?/);
         if (m) {
             result.sideGrade = parseInt(m[1], 10);
         }

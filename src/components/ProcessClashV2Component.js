@@ -46,7 +46,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
             { name: 'region1', x: 17, y: 3, w: 105, h: 27 }, // 2.0 전용 단계
             { name: 'region2', x: 58, y: 230, w: 145, h: 14 }, // 2.0 전용 점수
             { name: 'region3', x: 101, y: 258, w: 53, h: 18 }, // 2.0 전용 플레이 시간
-            { name: 'region4', x: 86, y: 289, w: 49, h: 18 }, // 2.0 전용 이면세계 단계
+            { name: 'region4', x: 86, y: 289, w: 60, h: 18 }, // 2.0 전용 이면세계 단계
             { name: 'region5', x: 305, y: 392, w: 7, h: 11, type: 'small_number' }, // 2.0 전용 이면의파편 레벨
             { name: 'region6', x: 374, y: 392, w: 7, h: 11, type: 'small_number' },
             { name: 'region7', x: 443, y: 392, w: 7, h: 11, type: 'small_number' },
@@ -163,7 +163,8 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                     .map((item, index) => {
                         if (item !== null && gameInfo.sideSkills[index] > 0) {
                             return {
-                                name: item.charName,
+                                // 같은 이면의파편, 다른 모양의 이미지를 같은 이름으로 통일
+                                name: item.charName.replace(/_\d+$/, ''),
                                 level: gameInfo.sideSkills[index],
                             };
                         }
