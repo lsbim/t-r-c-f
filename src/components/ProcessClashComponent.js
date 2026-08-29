@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Tesseract from 'tesseract.js';
 import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseClashInfo } from '../utils/function';
+import { OCR_CANVAS_SCALE } from '../utils/ocrConfig';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
 import { sliceClashCells } from '../utils/sliceCells';
 
@@ -53,9 +54,12 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
         const ocr = {};
 
         for (const { name, x, y, w, h } of regions) {
+
             let off = document.createElement('canvas');
-            off.width = w; off.height = h;
-            off.getContext('2d', { willReadFrequently: true }).drawImage(img, x, y, w, h, 0, 0, w, h);
+            off.width = w * OCR_CANVAS_SCALE;
+            off.height = h * OCR_CANVAS_SCALE;
+            const ctx = off.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, x, y, w, h, 0, 0, w * OCR_CANVAS_SCALE, h * OCR_CANVAS_SCALE);
 
             if (name === 'region1') {
                 // invertColors(off);
