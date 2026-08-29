@@ -56,6 +56,8 @@ const ProcessFrontierComponent = ({ session, debugInfo, setDebugInfo }) => {
             off.width = w * OCR_CANVAS_SCALE;
             off.height = h * OCR_CANVAS_SCALE;
             const ctx = off.getContext('2d', { willReadFrequently: true });
+            // ctx.imageSmoothingEnabled = true;
+            // ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, x, y, w, h, 0, 0, w * OCR_CANVAS_SCALE, h * OCR_CANVAS_SCALE);
 
             if (name === 'region1') {

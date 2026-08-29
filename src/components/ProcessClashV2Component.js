@@ -69,7 +69,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                 ocr[name] = matchDigit(off);
                 continue;
             } else {
-                const opts = name === 'region1' | 'region4' ? {
+                const opts = name === ('region1' || 'region4') ? {
                     tessedit_ocr_engine_mode: 1,
                     tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
                     tessedit_char_whitelist: '0123456789단계'
