@@ -114,8 +114,8 @@ export async function matchNames(embs, cells, storedEmbs, idx) {
             const charName = parts[0];
             const skinName = parts.slice(1).join(' ') || null;
 
-            // '우로스'인 경우에만 색상 분석 수행
-            if (charName.startsWith('우로스')) {
+            // 공명 사도인 경우에만 색상 분석 수행
+            if (charName.startsWith('우로스') || charName.startsWith('비비(신성)')) {
                 const cellImg = await loadImage(cell.url);
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = cell.w;
@@ -135,7 +135,7 @@ export async function matchNames(embs, cells, storedEmbs, idx) {
                     finalName = { charName, skinName }; // 색상 매칭 실패 시 기본 이름 사용
                 }
             } else {
-                // 우로스가 아니면 기본 이름 사용
+                // 공명 사도가 아니면 기본 이름 사용
                 finalName = { charName, skinName };
             }
         }
