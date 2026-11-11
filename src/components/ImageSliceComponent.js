@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { loadImage } from '../utils/function';
-import { sliceClashCells, sliceClashV2Cells, sliceClashV2SideSkills, sliceDeepClashBossCells, sliceFrontierCells } from '../utils/sliceCells';
+import { sliceClashCells, sliceClashV2Cells, sliceClashV2SideSkills, sliceDeepClashBossCells, sliceDeepClashPersCells, sliceFrontierCells } from '../utils/sliceCells';
 
 const ImageSliceComponent = () => {
     const [allCells, setAllCells] = useState([]);
@@ -76,75 +76,34 @@ const ImageSliceComponent = () => {
         setLoading(false);
     };
 
+    const SLICE_CONFIG = [
+        { label: '🎨 차원 대충돌 이미지 (5+4 격자):', onChange: (e) => handleImageSlice(e, 'clash') },
+        { label: '🎨 엘리아스 프론티어 이미지 (6+3 격자):', onChange: (e) => handleImageSlice(e, 'frontier') },
+        { label: '🎨 차원 대충돌 2.0 이미지 (9+9 격자):', onChange: (e) => handleImageSlice(e, 'clashV2') },
+        { label: '🎨 차원 대충돌 2.0 이면의파편:', onChange: (e) => handleImageSlice(e, 'clashV2SideSkills') },
+        { label: '🎨 심해 대격돌 보스(6+3 격자): ', onChange: (e) => handleImageSlice(e, 'deepClashBoss') },
+        { label: '🎨 심해 대격돌 성격별 해역(6칸):', onChange: (e) => handleImageSlice(e, 'deepClashPers') },
+    ]
+
     return (
         <>
-            {/* 차원대충돌 */}
-            <div className='p-5 max-w-[800px] mx-auto'>
-                <div className='mb-3'>
-                    <div className='mb-1 font-bold'>
-                        🎨 차원 대충돌 이미지 (5+4 격자):
+            {SLICE_CONFIG.map(config => (
+                <div className='p-5 max-w-[800px] mx-auto'>
+                    <div className='mb-3'>
+                        <div className='mb-1 font-bold'>
+                            {config.label}
+                        </div>
+                        <input
+                            className='m-1'
+                            type="file"
+                            multiple
+                            onChange={config.onChange}
+                            disabled={loading}
+                            accept="image/*"
+                        />
                     </div>
-                    <input
-                        className='m-1'
-                        type="file"
-                        multiple
-                        onChange={(e) => handleImageSlice(e, 'clash')}
-                        disabled={loading}
-                        accept="image/*"
-                    />
                 </div>
-            </div>
-
-            {/* 엘리아스 프론티어 */}
-            <div className='p-5 max-w-[800px] mx-auto'>
-                <div className='mb-3'>
-                    <div className='mb-1 font-bold'>
-                        🎨 엘리아스 프론티어 이미지 (6+3 격자):
-                    </div>
-                    <input
-                        className='m-1'
-                        type="file"
-                        multiple
-                        onChange={(e) => handleImageSlice(e, 'frontier')}
-                        disabled={loading}
-                        accept="image/*"
-                    />
-                </div>
-            </div>
-
-            {/* 차원 대충돌 2.0 */}
-            <div className='p-5 max-w-[800px] mx-auto'>
-                <div className='mb-3'>
-                    <div className='mb-1 font-bold'>
-                        🎨 차원 대충돌 2.0 이미지 (9+9 격자):
-                    </div>
-                    <input
-                        className='m-1'
-                        type="file"
-                        multiple
-                        onChange={(e) => handleImageSlice(e, 'clashV2')}
-                        disabled={loading}
-                        accept="image/*"
-                    />
-                </div>
-            </div>
-
-            {/* 차원 대충돌 2.0 이면의 파편 */}
-            <div className='p-5 max-w-[800px] mx-auto'>
-                <div className='mb-3'>
-                    <div className='mb-1 font-bold'>
-                        🎨 차원 대충돌 2.0 이면의파편:
-                    </div>
-                    <input
-                        className='m-1'
-                        type="file"
-                        multiple
-                        onChange={(e) => handleImageSlice(e, 'clashV2SideSkills')}
-                        disabled={loading}
-                        accept="image/*"
-                    />
-                </div>
-            </div>
+            ))}
 
             {/* 셀 분할 결과 */}
             {allCells.map(({ fileName, cells, error }, idx) => (
