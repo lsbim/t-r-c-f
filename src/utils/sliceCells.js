@@ -203,3 +203,79 @@ export function sliceClashV2SideSkills() {
 
   return rects;
 }
+
+// 심해 대격돌 보스용
+export function sliceDeepClashBossCells() {
+  // 사진 크기는 왼쪽 위 시작점부터 60X49 크기로 자른다(차원 대충돌 v1과 같음).
+  const CELL_WIDTH = 60;
+  const CELL_HEIGHT = 49;
+
+  // 1~6번 셀 (첫 번째 행)
+  const firstRow = [
+    { x: 425, y: 36 },
+    { x: 501, y: 36 }, // 76
+    { x: 577, y: 36 }, // 76
+    { x: 653, y: 36 }, // 76
+    { x: 729, y: 36 }, // 76
+    { x: 805, y: 36 }, // 76
+  ];
+
+  // 두 행의 Y축 차이는 71이다(차원 대충돌과 동일).
+
+  // 7~9번 셀 (두 번째 행)
+  const secondRow = [
+    { x: 425, y: 111 },
+    { x: 501, y: 111 },
+    { x: 577, y: 111 },
+  ];
+
+  // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
+  const rects = [
+    ...firstRow.map((pos, idx) => ({
+      index: idx + 1,        // 1-based 인덱스 (필요에 따라 0-based로 조정)
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    })),
+    ...secondRow.map((pos, idx) => ({
+      index: idx + 7,        // 두 번째 행은 6번부터
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    }))
+  ];
+
+  return rects;
+}
+
+// 심해 대격돌 성격별 해역용
+export function sliceDeepClashPersCells() {
+  // 사진 크기는 왼쪽 위 시작점부터 60X49 크기로 자른다(차원 대충돌 v1과 같음).
+  const CELL_WIDTH = 60;
+  const CELL_HEIGHT = 49;
+
+  // 1~6번 셀 (첫 번째 행)
+  const firstRow = [
+    { x: 425, y: 73 },
+    { x: 501, y: 73 }, // 76
+    { x: 577, y: 73 }, // 76
+    { x: 653, y: 73 }, // 76
+    { x: 729, y: 73 }, // 76
+    { x: 805, y: 73 }, // 76
+  ];
+
+  // 지도 배열과 고정 크기를 합쳐서 최종 rect 리스트 생성
+  const rects = [
+    ...firstRow.map((pos, idx) => ({
+      index: idx + 1,        // 1-based 인덱스 (필요에 따라 0-based로 조정)
+      x: pos.x,
+      y: pos.y,
+      w: CELL_WIDTH,
+      h: CELL_HEIGHT
+    }))
+  ];
+
+  return rects;
+}

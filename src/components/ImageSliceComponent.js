@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { loadImage } from '../utils/function';
-import { sliceClashCells, sliceClashV2Cells, sliceClashV2SideSkills, sliceFrontierCells } from '../utils/sliceCells';
+import { sliceClashCells, sliceClashV2Cells, sliceClashV2SideSkills, sliceDeepClashBossCells, sliceFrontierCells } from '../utils/sliceCells';
 
 const ImageSliceComponent = () => {
     const [allCells, setAllCells] = useState([]);
@@ -39,6 +39,12 @@ const ImageSliceComponent = () => {
                         break;
                     case 'clashV2SideSkills':
                         rects = sliceClashV2SideSkills();
+                        break;
+                    case 'deepClashBoss':
+                        rects = sliceDeepClashBossCells();
+                        break;
+                    case 'deepClashPers':
+                        rects = sliceDeepClashPersCells();
                         break;
                     default:
                         throw new Error(`Unknown slice type: ${type}`);
