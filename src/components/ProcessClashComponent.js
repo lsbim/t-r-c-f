@@ -5,6 +5,7 @@ import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseClashInfo } from '../utils/function';
 import { OCR_CANVAS_SCALE } from '../utils/ocrConfig';
 import { applyPreprocessing, invertColors } from '../utils/ocrFunction';
+import { recognize } from '../utils/ocrWorker';
 import { sliceClashCells } from '../utils/sliceCells';
 
 const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
@@ -85,7 +86,7 @@ const ProcessClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                 tessedit_char_whitelist: '0123456789:,'
             };
 
-            const { data: { text } } = await Tesseract.recognize(off, 'kor+eng', opts);
+            const { data: { text } } = await recognize(off, 'kor+eng', opts);
             ocr[name] = text.trim();
         }
 

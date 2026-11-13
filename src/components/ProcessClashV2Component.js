@@ -4,6 +4,7 @@ import Tesseract from 'tesseract.js';
 import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseClashV2Info } from '../utils/function';
 import { OCR_CANVAS_SCALE } from '../utils/ocrConfig';
+import { recognize } from '../utils/ocrWorker';
 import { sliceClashV2Cells } from '../utils/sliceCells';
 import { loadTemplates, matchDigit, templateImages } from '../utils/template';
 
@@ -79,7 +80,7 @@ const ProcessClashV2Component = ({ session, debugInfo, setDebugInfo }) => {
                     tessedit_char_whitelist: '0123456789:,'
                 };
 
-                const { data: { text } } = await Tesseract.recognize(off, 'kor+eng', opts);
+                const { data: { text } } = await recognize(off, 'kor+eng', opts);
 
                 ocr[name] = text.trim();
             }

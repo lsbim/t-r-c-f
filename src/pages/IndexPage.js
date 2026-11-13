@@ -5,6 +5,7 @@ import ProcessClashComponent from '../components/ProcessClashComponent';
 import ProcessClashV2Component from '../components/ProcessClashV2Component';
 import ProcessFrontierComponent from '../components/ProcessFrontierComponent';
 import HeaderNav from "../layouts/HeaderNav";
+import ProcessDeepClashComponent from '../components/ProcessDeepClashComponent';
 
 const IndexPage = () => {
 
@@ -62,6 +63,9 @@ const IndexPage = () => {
                 <label>
                     대충돌 2.0 <input type='radio' value={"clash_v2"} onChange={radioHandler} checked={selectType === 'clash_v2'} />
                 </label>
+                <label>
+                    심해 대격돌 <input type='radio' value={"deep_clash"} onChange={radioHandler} checked={selectType === 'deep_clash'} />
+                </label>
             </div>
             {selectType === 'clash' && (
                 <ProcessClashComponent
@@ -79,6 +83,13 @@ const IndexPage = () => {
             )}
             {selectType === 'clash_v2' && (
                 <ProcessClashV2Component
+                    session={session}
+                    setDebugInfo={setDebugInfo}
+                    debugInfo={debugInfo}
+                />
+            )}
+            {selectType === 'deep_clash' && (
+                <ProcessDeepClashComponent
                     session={session}
                     setDebugInfo={setDebugInfo}
                     debugInfo={debugInfo}
