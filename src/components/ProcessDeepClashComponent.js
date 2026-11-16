@@ -147,7 +147,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
         if (!session) return;
         const files = Array.from(e.target.files);
 
-        // 폴더명 = 이미지 종류(boss, naive, gloomy ...), 파일명 숫자 = 순위 → 순위별로 6장을 묶는다
+        // 폴더명 = 이미지 종류(boss, innocence, depressed ...), 파일명 숫자 = 순위 → 순위별로 6장을 묶는다
         const groups = {};
         files.forEach(file => {
             const parts = file.webkitRelativePath.split('/');
