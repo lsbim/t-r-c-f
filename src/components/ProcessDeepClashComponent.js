@@ -80,7 +80,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             ctx.drawImage(small, 0, 0, w, h, PAD, PAD, w * OCR_CANVAS_SCALE, h * OCR_CANVAS_SCALE);
 
 
-            const { data: { text } } = await recognize(off, 'eng', {
+            const { data: { text } } = await recognize(off, 'eng', null, {
                 tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
                 tessedit_char_whitelist: whitelist
             });

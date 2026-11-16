@@ -8,9 +8,17 @@ const PARAM_DEFAULTS = {
     tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE, // 이 프로젝트의 OCR 대상은 모두 한 줄이다
 };
 
-function getWorker(key, langs) {
+function paramWorkerOptions() { // 심해 대격돌 전용 모델
+    return {
+        langPath: `${window.location.origin}${process.env.PUBLIC_URL}/models`,
+        gzip: false,
+        cachePath: 'tessdata-fast-v1',
+    };
+}
+
+function getWorker(key, langs, options) {
     if (!workers[key]) {
-        workers[key] = Tesseract.createWorker(langs, 1).catch((e) => {
+        workers[key] = Tesseract.createWorker(langs, 1, options).catch((e) => {
             delete workers[key]; // 생성 실패가 캐시에 남아 다음 호출까지 막지 않도록
             throw e;
         });
@@ -22,11 +30,11 @@ function getWorker(key, langs) {
 export function recognize(image, langs = 'eng', options, params) {
     const key = `${langs}|${params ? 'param' : 'plain'}`;
     const job = queue.then(async () => {
-        const worker = await getWorker(key, langs);
+        const worker = await getWorker(key, langs, params ? paramWorkerOptions() : undefined);
         if (params) await worker.setParameters({ ...PARAM_DEFAULTS, ...params });
         return worker.recognize(image);
     });
-    queue = job.catch(() => {}); // 앞 요청이 실패해도 다음 요청은 계속 진행한다
+    queue = job.catch(() => { }); // 앞 요청이 실패해도 다음 요청은 계속 진행한다
     return job;
 }
 
@@ -35,5 +43,5 @@ export async function terminateOcrWorkers() {
     await queue;
     const list = Object.values(workers);
     Object.keys(workers).forEach((k) => delete workers[k]);
-    await Promise.all(list.map((p) => p.then((w) => w.terminate()).catch(() => {})));
+    await Promise.all(list.map((p) => p.then((w) => w.terminate()).catch(() => { })));
 }
