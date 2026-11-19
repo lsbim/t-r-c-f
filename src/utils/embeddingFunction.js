@@ -82,11 +82,16 @@ export async function batchEmbed(imageUrls, canvasRef, ort, session) {
     const batchedEmb = outputs.image_embeds.data;
 
     const dim = batchedEmb.length / N;
-    return Array.from({ length: N }, (_, i) => {
+    const result = Array.from({ length: N }, (_, i) => {
         const slice = batchedEmb.slice(i * dim, (i + 1) * dim);
         const norm = Math.hypot(...slice);
         return slice.map(v => v / norm);
     });
+
+    // 값은 slice 로 복사했으므로 입출력 텐서를 해제한다 (webgpu 사용 시 GPU 버퍼가 쌓이는 것을 막는다)
+    batchTensor.dispose?.();
+    Object.values(outputs).forEach(t => t.dispose?.());
+    return result;
 }
 
 const THRESH = 0.8;

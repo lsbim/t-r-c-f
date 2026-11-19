@@ -1,5 +1,5 @@
 import * as ort from 'onnxruntime-web';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import Tesseract from 'tesseract.js';
 import { batchEmbed, matchNames } from '../utils/embeddingFunction';
 import { loadImage, parseClashV2Info } from '../utils/function';
@@ -7,14 +7,124 @@ import { OCR_CANVAS_SCALE } from '../utils/ocrConfig';
 import { recognize } from '../utils/ocrWorker';
 import { sliceDeepClashBossCells, sliceDeepClashPersCells } from '../utils/sliceCells';
 
+const STORAGE_KEY = 'deepClashResults:v1'; // 끝난 순위를 브라우저에 자동 저장
+
+// 저장된 결과 불러오기
+function loadSaved() {
+    try {
+        const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        return Array.isArray(list) ? list : [];
+    } catch {
+        return [];
+    }
+}
+
+function saveResults(list) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+        console.warn('자동 저장 실패(용량 초과 등). JSON 다운로드로 백업하세요:', e);
+    }
+}
+
+// rank 기준으로 추가/교체한 새 배열
+const upsert = (list, item) => [...list.filter(r => r.rank !== item.rank), item].sort((a, b) => a.rank - b.rank);
+
+// 순위 1명의 이미지와 분석 결과 카드.
+// memo 로 감싸서 새 순위가 추가될 때 기존 카드는 다시 그려지지 않는다. (이미지가 화면 밖이면 loading="lazy" 로 불러오지 않는다)
+const RankCard = memo(function RankCard({ result, bundle, urlFor }) {
+    const kinds = ['boss', ...Object.keys(result.personalities ?? {})];
+    return (
+        <div id={`rank-${result.rank}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-gray-800 truncate mr-4">
+                    {result.rank}위 ({kinds.length}/6장)
+                    {!bundle && <span className="ml-2 text-xs font-normal text-gray-400">(이미지는 폴더를 선택하면 표시됩니다)</span>}
+                </h4>
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    ✅ 분석 완료
+                </span>
+            </div>
+
+            <div className="flex flex-col gap-4">
+                {kinds.map(kind => {
+                    const part = kind === 'boss' ? result : result.personalities?.[kind];
+                    const file = bundle?.files[kind];
+                    return (
+                        <div key={kind}>
+                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">{kind}</div>
+                            {file && (
+                                <img
+                                    src={urlFor(file)}
+                                    alt={file.name}
+                                    width={900}
+                                    height={206}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-full h-auto object-cover rounded-lg border border-gray-200"
+                                />
+                            )}
+                            {part && (
+                                <div className='flex'>
+                                    <div className="w-[330px] bg-gray-50 rounded-lg p-4">
+                                        <div className="flex-col flex  items-center justify-center w-[300px]">
+                                            {kind === 'boss' ? (
+                                                <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">점수</div>
+                                                    <div className="text-lg font-bold text-green-600">{part.score?.toLocaleString()}</div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">수심</div>
+                                                        <div className="text-lg font-bold text-blue-600">{part.depth}m</div>
+                                                    </div>
+                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
+                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">시간</div>
+                                                        <div className="text-lg font-bold text-purple-600">{part.duration}초</div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
+                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사도 배열</div>
+                                        <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                            {part.arr.join(', ')}
+                                        </div>
+                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사복 배열</div>
+                                        <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
+                                            {part.skinArr.join(', ')}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+});
 
 const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [results, setResults] = useState([]);   // 이제 각 요소가 { grade, score, duration, timeBonus, arr } 형태
+    const [results, setResults] = useState(loadSaved);   // 저장된 결과가 있으면 불러온다
     const [storedEmbs, setStoredEmbs] = useState([]);  // { name: string, emb: Float32Array }[]
     const canvasRef = useRef(document.createElement('canvas'));
-    const [fileList, setFileList] = useState([]);
-    const [resultDebug, setResultDebug] = useState({});
+    const [failed, setFailed] = useState([]);       // 처리에 실패한 순위
+    const [running, setRunning] = useState(false);
+    const [resume, setResume] = useState(true);       // 저장된 결과가 있으면 끝난 순위는 건너뛴다
+    const resultsRef = useRef(results);   // 처리 루프 안에서 최신 결과를 읽기 위한 ref (state 는 루프가 시작된 시점의 값에 묶인다)
+    const bundleMapRef = useRef({});      // rank -> { rank, files }  File 참조만 들고 있어서 가볍다
+    const stopRef = useRef(false);
+    const urlCacheRef = useRef(new Map());   // File -> 이미지 URL. 렌더링마다 새로 만들면 메모리가 쌓이므로 파일당 한 번만 만든다
+
+    const urlFor = useCallback(file => {
+        const cache = urlCacheRef.current;
+        if (!cache.has(file)) cache.set(file, URL.createObjectURL(file));
+        return cache.get(file);
+    }, []);
 
     useEffect(() => {
         fetch('/data/embeddings.json')
@@ -157,20 +267,37 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
         });
         const bundles = Object.keys(groups).map(Number).sort((a, b) => a - b)
             .map(rank => ({ rank, files: groups[rank] }));
+        bundleMapRef.current = Object.fromEntries(bundles.map(b => [b.rank, b]));
+        urlCacheRef.current.forEach(url => URL.revokeObjectURL(url)); // 이전 폴더의 이미지 URL 해제
+        urlCacheRef.current.clear();
 
-        setResults([]);
-        setFileList(bundles);
-        setProgress({ current: 0, total: bundles.length });
+        // 이어하기: 이미 끝난 순위는 건너뛴다
+        if (!resume && resultsRef.current.length > 0) {
+            if (!window.confirm(`저장된 결과 ${resultsRef.current.length}개를 지우고 처음부터 시작할까요?`)) return;
+            resultsRef.current = [];
+            setResults([]);
+            saveResults([]);
+        }
+        const doneRanks = new Set(resultsRef.current.map(r => r.rank));
+        const todo = bundles.filter(b => !doneRanks.has(b.rank));
 
-        for (let idx = 0; idx < bundles.length; idx++) {
-            const { rank, files: bundle } = bundles[idx];
-            console.log(`🔄 [${idx + 1}/${bundles.length}] ${rank}위 처리 시작`);
+        setFailed([]);
+        setRunning(true);
+        stopRef.current = false;
+        setProgress({ current: 0, total: todo.length });
+        setDebugInfo(todo.length < bundles.length ? `이어하기: 완료된 ${bundles.length - todo.length}개 순위는 건너뜀` : '처리 시작');
+        const debug = {}; // 특이사항 모음
+
+        for (let idx = 0; idx < todo.length; idx++) {
+            if (stopRef.current) break;
+            const { rank, files: bundle } = todo[idx];
+            console.log(`🔄 [${idx + 1}/${todo.length}] ${rank}위 처리 시작`);
 
             try {
                 const resultObject = { rank, score: null, arr: [], skinArr: [], personalities: {} };
 
                 for (const [kind, file] of Object.entries(bundle)) {
-                    setDebugInfo(`${rank}위 ${kind} 처리 중... (${idx + 1}/${bundles.length})`);
+                    setDebugInfo(`${rank}위 ${kind} 처리 중... (${idx + 1}/${todo.length})`);
                     const { gameInfo, names } = await analyzeFile(file, kind, idx);
 
                     const arr = names.filter(Boolean).map(n => n.charName);
@@ -185,65 +312,86 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     }
                 }
 
-                if (results.length > 0 && resultObject.rank !== null) {
-                    // 바로 이전 결과와만 비교
-                    const prevResult = results[resultObject?.rank - 1];
-                    if (prevResult?.rank !== null && prevResult?.score < resultObject?.score && prevResult?.rank < resultObject?.rank) {
-                        const debugKey = prevResult?.rank;
-                        const debugMessage = `${prevResult?.rank}위 점수: ${prevResult?.score} < ${resultObject?.rank}위 점수: ${resultObject?.score}`;
-
-                        setResultDebug(prev => ({
-                            ...prev,
-                            [debugKey]: debugMessage
-                        }));
-
-                        console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                    }
+                // 바로 앞 순위 점수와 비교 (state 가 아니라 ref 의 최신 결과를 읽는다)
+                const prevResult = resultsRef.current.find(r => r.rank === rank - 1);
+                if (prevResult && prevResult.score < resultObject.score) {
+                    debug[prevResult.rank] = `${prevResult.rank}위 점수: ${prevResult.score} < ${rank}위 점수: ${resultObject.score}`;
+                    console.warn(`🚨 랭킹 버그 감지:`, debug[prevResult.rank]);
                 }
                 if (resultObject.score === null || isNaN(resultObject.score)) {
-                    const debugMessage = `${resultObject.rank}위 null 발생: score: ${resultObject.score}`;
-                    setResultDebug(prev => ({
-                        ...prev,
-                        [resultObject.rank]: debugMessage
-                    }));
-                    console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
+                    debug[rank] = `${rank}위 null 발생: score: ${resultObject.score}`;
+                    console.warn(`🚨 랭킹 버그 감지:`, debug[rank]);
                 }
 
-                // if (resultObject.duration < 120) {
-                //     const debugMessage = `${resultObject.rank}위 플레이 타임: ${resultObject.duration}`
-                //     setResultDebug(prev => ({
-                //         ...prev,
-                //         [resultObject.rank]: debugMessage
-                //     }));
-                //     console.warn(`🚨 랭킹 버그 감지:`, debugMessage);
-                // }
-
-                // 6) 결과 누적 & 진행도 업데이트
-                setResults(prev => [...prev, resultObject]);
-                setProgress(p => ({ current: p.current + 1, total: p.total }));
+                // 결과 누적 + 자동 저장 + 미리보기 순위 갱신
+                resultsRef.current = upsert(resultsRef.current, resultObject);
+                setResults(resultsRef.current);
+                saveResults(resultsRef.current);
 
             } catch (error) {
-                console.error(`파일 ${idx + 1} 처리 중 오류:`, error);
-                // 오류 발생 시에도 기본 객체 추가
-                setResults(prev => [...prev, {
-                    rank,
-                    score: 0,
-                    arr: [],
-                    skinArr: [],
-                    personalities: {}
-                }]);
-                setProgress(p => ({ current: p.current + 1, total: p.total }));
+                console.error(`${rank}위 처리 중 오류:`, error);
+                debug[rank] = `${rank}위 처리 실패: ${error?.message || error}`;
+                setFailed(prev => [...prev, rank]); // 저장하지 않으므로 다음 이어하기에서 다시 시도된다
             }
-        } // 파일 수만큼 반복 완료
+            setProgress(p => ({ current: p.current + 1, total: p.total }));
+        } // 순위 수만큼 반복 완료
 
-        if (Object.keys(resultDebug).length === 0) {
-            console.log("✅ 특이사항이 없습니다. ", resultDebug)
+        setRunning(false);
+        if (Object.keys(debug).length === 0) {
+            console.log("✅ 특이사항이 없습니다. ", debug);
         } else {
-            console.log("❗ 특이사항 발생: ", resultDebug)
+            console.log("❗ 특이사항 발생: ", debug);
         }
-
-        setDebugInfo('모든 파일 처리 완료!');
+        setDebugInfo(stopRef.current ? '중지됨 (같은 폴더를 다시 선택하면 이어서 진행합니다)' : '모든 파일 처리 완료!');
     };
+
+    // 현재 결과를 .json 파일로 저장
+    const downloadJson = () => {
+        const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `deep_clash_${results.length}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
+
+    // 이전에 저장한 .json 을 불러와 합친다 (이미 있는 순위는 유지)
+    const importJson = async e => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const list = JSON.parse(await file.text());
+            if (!Array.isArray(list) || !list.every(r => Number.isInteger(r?.rank))) throw new Error('rank 가 있는 객체 배열이 아닙니다');
+            let merged = resultsRef.current;
+            let added = 0;
+            for (const r of list) {
+                if (!merged.some(x => x.rank === r.rank)) { merged = upsert(merged, r); added++; }
+            }
+            resultsRef.current = merged;
+            setResults(merged);
+            saveResults(merged);
+            setDebugInfo(`JSON 불러오기: ${list.length}개 중 ${added}개 추가 (이미 있는 순위는 유지)`);
+        } catch (err) {
+            setDebugInfo('JSON 불러오기 실패: ' + err.message);
+        }
+    };
+
+    const clearSaved = () => {
+        if (!window.confirm(`저장된 결과 ${results.length}개를 모두 지웁니다. 계속할까요?`)) return;
+        resultsRef.current = [];
+        setResults([]);
+        saveResults([]);
+    };
+
+    // 컴포넌트가 사라질 때 이미지 URL 을 모두 해제한다
+    useEffect(() => {
+        const cache = urlCacheRef.current;
+        return () => {
+            cache.forEach(url => URL.revokeObjectURL(url));
+            cache.clear();
+        };
+    }, []);
 
     return (
         <div className="p-6 max-w-4xl mx-auto bg-white min-h-screen">
@@ -286,11 +434,31 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     webkitdirectory=""
                     accept="image/*"
                     onChange={handleFiles}
-                    disabled={!session}
+                    disabled={!session || running}
                     className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
                 <p className="text-sm text-gray-500 mt-2">
                     폴더명이 이미지 종류, 파일명의 숫자가 순위입니다. 순위별로 보스 1장 + 성격 5장을 묶어 분석합니다.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-3 mt-4 text-sm">
+                    <label className="flex items-center gap-1">
+                        <input type="checkbox" checked={resume} onChange={e => setResume(e.target.checked)} disabled={running} />
+                        이어하기 (저장된 순위는 건너뜀)
+                    </label>
+                    <button onClick={() => { stopRef.current = true; }} disabled={!running}
+                        className="px-3 py-1 bg-gray-600 text-white rounded-lg disabled:opacity-40">중지</button>
+                    <button onClick={downloadJson} disabled={!results.length}
+                        className="px-3 py-1 bg-indigo-600 text-white rounded-lg disabled:opacity-40">⬇ JSON 다운로드</button>
+                    <label className="px-3 py-1 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                        📂 JSON 불러오기
+                        <input type="file" accept=".json,application/json" onChange={importJson} disabled={running} className="hidden" />
+                    </label>
+                    <button onClick={clearSaved} disabled={running || !results.length}
+                        className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg disabled:opacity-40">저장된 결과 지우기</button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                    끝난 순위는 브라우저에 자동 저장됩니다. 탭이 종료되어도 같은 폴더를 다시 선택하면 이어서 진행합니다. (저장된 결과 {results.length}개{failed.length ? `, 실패: ${failed.join(', ')}위` : ''})
                 </p>
             </div>
 
@@ -301,71 +469,34 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                     <span className="ml-3 text-sm font-normal text-gray-500">({results.length}개 완료)</span>
                 </h3>
 
-                <div className="grid gap-4">
-                    {fileList.map((bundle, i) => (
-                        <div key={bundle.rank} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-center mb-3">
-                                <h4 className="font-semibold text-gray-800 truncate mr-4">
-                                    {bundle.rank}위 ({Object.keys(bundle.files).length}/6장)
-                                </h4>
-                                {results[i] && (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        ✅ 분석 완료
-                                    </span>
-                                )}
-                            </div>
+                <div className="max-h-72 overflow-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th className="p-2 text-left">순위</th>
+                                <th className="p-2 text-right">점수</th>
+                                <th className="p-2 text-left">성격별 (수심 / 시간)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {results.map(r => (
+                                <tr key={r.rank}
+                                    onClick={() => document.getElementById(`rank-${r.rank}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                    className="border-t border-gray-100 cursor-pointer hover:bg-blue-50">
+                                    <td className="p-2 font-bold">{r.rank}위</td>
+                                    <td className="p-2 text-right font-mono">{r.score?.toLocaleString() ?? '-'}</td>
+                                    <td className="p-2 text-xs text-gray-600">
+                                        {Object.entries(r.personalities ?? {}).map(([k, v]) => `${k} ${v.depth ?? '-'}m/${v.duration ?? '-'}초`).join(' · ')}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
 
-                            <div className="flex flex-col gap-4">
-                                {Object.entries(bundle.files).map(([kind, file]) => {
-                                    const part = kind === 'boss' ? results[i] : results[i]?.personalities?.[kind];
-                                    return (
-                                        <div key={kind}>
-                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">{kind}</div>
-                                            <img
-                                                src={URL?.createObjectURL(file)}
-                                                alt={file.name}
-                                                className="w-full object-cover rounded-lg border border-gray-200"
-                                            />
-                                            {part && (
-                                                <div className='flex'>
-                                                    <div className="w-[330px] bg-gray-50 rounded-lg p-4">
-                                                        <div className="flex-col flex  items-center justify-center w-[300px]">
-                                                            {kind === 'boss' ? (
-                                                                <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                                    <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">점수</div>
-                                                                    <div className="text-lg font-bold text-green-600">{part.score?.toLocaleString()}</div>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">수심</div>
-                                                                        <div className="text-lg font-bold text-blue-600">{part.depth}m</div>
-                                                                    </div>
-                                                                    <div className="bg-white rounded-lg p-3 border border-gray-200 w-full">
-                                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium">시간</div>
-                                                                        <div className="text-lg font-bold text-purple-600">{part.duration}초</div>
-                                                                    </div>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="bg-white rounded-lg p-3 border gap-y-2 flex flex-col border-gray-200 w-[480px]">
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사도 배열</div>
-                                                        <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                            {part.arr.join(', ')}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">사복 배열</div>
-                                                        <div className="text-[14px] bg-gray-100 p-2 rounded border font-mono overflow-x-auto flex justify-end pr-24">
-                                                            {part.skinArr.join(', ')}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                <div className="grid gap-4 mt-4">
+                    {results.map(r => (
+                        <RankCard key={r.rank} result={r} bundle={bundleMapRef.current[r.rank]} urlFor={urlFor} />
                     ))}
                 </div>
             </div>
@@ -387,7 +518,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                         </div>
                         <button
                             onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(results, null, 2));
+                                navigator.clipboard.writeText(JSON.stringify(results, null, 2)); // 누를 때만 문자열로 만든다
                                 // 복사 완료 피드백을 위한 간단한 알림 (선택사항)
                             }}
                             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -396,8 +527,9 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
                             <span>복사</span>
                         </button>
                     </div>
+                    <p className="px-4 pt-3 text-xs text-gray-500">마지막 1명 미리보기 (전체는 위 복사 버튼이나 JSON 다운로드로 받으세요)</p>
                     <pre className="p-4 text-xs font-mono text-gray-700 max-h-80 overflow-auto leading-relaxed">
-                        {JSON.stringify(results.sort((a, b) => a.rank - b.rank), null, 2)}
+                        {JSON.stringify(results.slice(-1), null, 2)}
                     </pre>
                 </div>
             </div>
