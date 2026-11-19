@@ -7,13 +7,21 @@ import { OCR_CANVAS_SCALE } from '../utils/ocrConfig';
 import { recognize } from '../utils/ocrWorker';
 import { sliceDeepClashBossCells, sliceDeepClashPersCells } from '../utils/sliceCells';
 
-const STORAGE_KEY = 'deepClashResults:v1'; // 끝난 순위를 브라우저에 자동 저장
+const STORAGE_KEY = 'deepClashResults:v2'; // 1부터 시작하는 순위를 브라우저에 자동 저장
+const LEGACY_STORAGE_KEY = 'deepClashResults:v1';
 
 // 저장된 결과 불러오기
 function loadSaved() {
     try {
-        const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-        return Array.isArray(list) ? list : [];
+        const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (Array.isArray(current)) return current;
+
+        // v1은 0부터 시작하는 파일 번호를 순위로 저장했으므로 1을 더해 옮긴다.
+        const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || '[]');
+        if (!Array.isArray(legacy)) return [];
+        const migrated = legacy.map(result => ({ ...result, rank: result.rank + 1 }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        return migrated;
     } catch {
         return [];
     }
@@ -275,7 +283,8 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
         files.forEach(file => {
             const parts = file.webkitRelativePath.split('/');
             const kind = parts[parts.length - 2];
-            const rank = parseInt(file.name.match(/\d+/)?.[0], 10);
+            const fileNumber = parseInt(file.name.match(/\d+/)?.[0], 10);
+            const rank = fileNumber + 1;
             if (!isNaN(rank)) (groups[rank] ||= {})[kind] = file;
         });
         const bundles = Object.keys(groups).map(Number).sort((a, b) => a - b)
