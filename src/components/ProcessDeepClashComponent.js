@@ -33,6 +33,7 @@ const upsert = (list, item) => [...list.filter(r => r.rank !== item.rank), item]
 // 순위 1명의 이미지와 분석 결과 카드.
 // memo 로 감싸서 새 순위가 추가될 때 기존 카드는 다시 그려지지 않는다. (이미지가 화면 밖이면 loading="lazy" 로 불러오지 않는다)
 const RankCard = memo(function RankCard({ result, bundle, urlFor }) {
+    const [showImages, setShowImages] = useState(false);
     const kinds = ['boss', ...Object.keys(result.personalities ?? {})];
     return (
         <div id={`rank-${result.rank}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
@@ -47,13 +48,20 @@ const RankCard = memo(function RankCard({ result, bundle, urlFor }) {
             </div>
 
             <div className="flex flex-col gap-4">
+                <button
+                    type="button"
+                    onClick={() => setShowImages(value => !value)}
+                    className="self-start text-sm text-blue-700 hover:underline"
+                >
+                    {showImages ? '원본 이미지 숨기기' : '원본 이미지 보기'}
+                </button>
                 {kinds.map(kind => {
                     const part = kind === 'boss' ? result : result.personalities?.[kind];
                     const file = bundle?.files[kind];
                     return (
                         <div key={kind}>
                             <div className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">{kind}</div>
-                            {file && (
+                            {file && showImages && (
                                 <img
                                     src={urlFor(file)}
                                     alt={file.name}
@@ -153,16 +161,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
     async function performOCR(img, idx, kind) {
         console.time(`OCR ${idx}`);
 
-        const regions = kind === 'boss' ? [
-            { name: 'region2', x: 72, y: 157, w: 191, h: 22, color: 'yellow', whitelist: '0123456789,' }, // 보스 점수
-        ] : [
-            { name: 'depth', x: 132, y: 76, w: 60, h: 24, color: 'white', whitelist: '0123456789' }, // 성격 해역 수심
-            { name: 'region3', x: 175, y: 116, w: 64, h: 19, color: 'yellow', whitelist: '0123456789:' }, // 성격 클리어 시간
-        ];
-        const ocr = {};
-
-        for (const { name, x, y, w, h, color, whitelist } of regions) {
-
+        async function recognizeRegion({ x, y, w, h, color, whitelist }) {
             // 글자색만 남겨 검정 글씨/흰 배경으로 만든 뒤 확대
             const small = document.createElement('canvas');
             small.width = w;
@@ -181,7 +180,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             sctx.putImageData(imageData, 0, 0);
 
             const PAD = 20; // 글자가 가장자리에 닿으면 오인식되므로 흰 여백을 준다
-            let off = document.createElement('canvas');
+            const off = document.createElement('canvas');
             off.width = w * OCR_CANVAS_SCALE + PAD * 2;
             off.height = h * OCR_CANVAS_SCALE + PAD * 2;
             const ctx = off.getContext('2d', { willReadFrequently: true });
@@ -189,25 +188,39 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             ctx.fillRect(0, 0, off.width, off.height);
             ctx.drawImage(small, 0, 0, w, h, PAD, PAD, w * OCR_CANVAS_SCALE, h * OCR_CANVAS_SCALE);
 
-
             const { data: { text } } = await recognize(off, 'eng', null, {
                 tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
                 tessedit_char_whitelist: whitelist
             });
-
-            ocr[name] = text.trim();
+            return text.trim();
         }
 
-        for (const [key, value] of Object.entries(ocr)) {
-            console.log(`ocr: ${key}: ${value}`);
-        }
+        const regions = kind === 'boss' ? [
+            { name: 'region2', x: 72, y: 157, w: 191, h: 22, color: 'yellow', whitelist: '0123456789,' }, // 보스 점수
+        ] : [
+            { name: 'depth', x: 132, y: 76, w: 80, h: 24, color: 'white', whitelist: '0123456789m' }, // 숫자와 단위 m 전체를 인식해 단위 일부가 1로 붙는 것을 방지
+            { name: 'region3', x: 175, y: 116, w: 64, h: 19, color: 'yellow', whitelist: '0123456789:' }, // 성격 클리어 시간
+        ];
+        const ocr = {};
 
-        console.log('→ OCR 완료:', ocr);
+        for (const { name, ...region } of regions) ocr[name] = await recognizeRegion(region);
+
         console.timeEnd(`OCR ${idx}`);
 
         // 파서 같이쓰기
-        const info = parseClashV2Info({ region1: '', region2: ocr.region2 ?? '', region3: ocr.region3 ?? '', region4: '' });
-        return { score: info.score, duration: info.duration, depth: ocr.depth ? parseInt(ocr.depth, 10) : null };
+        let info = parseClashV2Info({ region1: '', region2: ocr.region2 ?? '', region3: ocr.region3 ?? '', region4: '' });
+        // 기존 좁은 crop이 시간 앞자리를 놓쳐 null/비현실적인 값이 될 때만 넓은 crop으로 재시도한다.
+        if (kind !== 'boss' && (info.duration === null || info.duration > 120)) {
+            const fallbackTime = await recognizeRegion({
+                x: 150, y: 116, w: 100, h: 19, color: 'yellow', whitelist: '0123456789:'
+            });
+            const retryInfo = parseClashV2Info({ region1: '', region2: '', region3: fallbackTime, region4: '' });
+            if (retryInfo.duration !== null && retryInfo.duration <= 120) info = retryInfo;
+            else if (info.duration > 120) info = { ...info, duration: null };
+        }
+        const depthMatch = /^\s*(\d{1,3})\s*m?\s*$/i.exec(ocr.depth ?? '');
+        const depth = depthMatch ? Number.parseInt(depthMatch[1], 10) : null;
+        return { score: info.score, duration: info.duration, depth: depth !== null && depth <= 300 ? depth : null };
     }
 
     // 이미지 1장 분석
@@ -245,7 +258,7 @@ const ProcessDeepClashComponent = ({ session, debugInfo, setDebugInfo }) => {
             // 게임 정보 추출 + 매칭 & 예측 이름 추출
             const [gameInfo, names] = await Promise.all([
                 performOCR(img, idx, kind),
-                matchNames(embs, cells, storedEmbs, idx)
+                matchNames(embs, cells, storedEmbs, idx, { quiet: true })
             ]);
             return { gameInfo, names };
         } finally {

@@ -78,22 +78,27 @@ export async function batchEmbed(imageUrls, canvasRef, ort, session) {
     }));
 
     const batchTensor = new ort.Tensor('float32', bigData, [N, 3, targetSize, targetSize]);
-    const outputs = await session.run({ pixel_values: batchTensor });
-    const batchedEmb = outputs.image_embeds.data;
+    try {
+        const outputs = await session.run({ pixel_values: batchTensor });
+        const batchedEmb = outputs.image_embeds.data;
 
-    const dim = batchedEmb.length / N;
-    return Array.from({ length: N }, (_, i) => {
-        const slice = batchedEmb.slice(i * dim, (i + 1) * dim);
-        const norm = Math.hypot(...slice);
-        return slice.map(v => v / norm);
-    });
+        const dim = batchedEmb.length / N;
+        return Array.from({ length: N }, (_, i) => {
+            const slice = batchedEmb.slice(i * dim, (i + 1) * dim);
+            const norm = Math.hypot(...slice);
+            return slice.map(v => v / norm);
+        });
+    } finally {
+        // 입력은 추론이 끝난 뒤 더 이상 필요 없다. 출력 텐서는 현재 동작을 유지한다.
+        batchTensor.dispose?.();
+    }
 }
 
 const THRESH = 0.8;
 
-export async function matchNames(embs, cells, storedEmbs, idx) {
+export async function matchNames(embs, cells, storedEmbs, idx, { quiet = false } = {}) {
 
-    console.time(`match ${idx}`);
+    if (!quiet) console.time(`match ${idx}`);
 
     const names = await Promise.all(embs.map(async (emb, i) => {
         const cell = cells[i];
@@ -105,7 +110,7 @@ export async function matchNames(embs, cells, storedEmbs, idx) {
             if (sum > best.score) best = { score: sum, name };
         }
 
-        if (best.score <= 0.935) console.warn(`🚨 유사도 낮음: ${best.name} = ${best.score}`);
+        if (!quiet && best.score <= 0.935) console.warn(`🚨 유사도 낮음: ${best.name} = ${best.score}`);
 
         let finalName = null;
         if (best?.score >= THRESH) {
@@ -147,7 +152,7 @@ export async function matchNames(embs, cells, storedEmbs, idx) {
         return finalName;
     }));
 
-    console.timeEnd(`match ${idx}`);
+    if (!quiet) console.timeEnd(`match ${idx}`);
 
     return names;
 }
