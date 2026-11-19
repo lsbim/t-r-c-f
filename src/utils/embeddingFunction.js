@@ -129,7 +129,12 @@ export async function matchNames(embs, cells, storedEmbs, idx) {
                 tempCtx.drawImage(cellImg, 0, 0);
 
                 // 색상 추출 영역
-                const roi = { x: 1, y: 15, w: 3, h: 30 };
+                const roi = {
+                    x: 0,
+                    y: 0,
+                    w: Math.round(cell.w * 0.21),
+                    h: Math.round(cell.h * 0.26)
+                };
 
                 const avgColor = getAverageColor(tempCanvas, roi);
                 const attribute = getClosestAttribute(avgColor);
